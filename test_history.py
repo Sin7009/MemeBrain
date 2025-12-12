@@ -9,15 +9,21 @@ class TestHistoryManager(unittest.TestCase):
         self.chat_id = 12345
         self.user_id = 111
 
-    def create_mock_message(self, message_id, text):
+    def create_mock_message(self, message_id, text, is_forwarded=False):
         from datetime import datetime
-        return Message(
-            message_id=message_id,
-            date=datetime.now(), 
-            chat=Chat(id=self.chat_id, type="private"),
-            from_user=User(id=self.user_id, is_bot=False, first_name="Test"),
-            text=text
-        )
+        message_data = {
+            "message_id": message_id,
+            "date": datetime.now(),
+            "chat": Chat(id=self.chat_id, type="private"),
+            "from_user": User(id=self.user_id, is_bot=False, first_name="Test"),
+            "text": text
+        }
+
+        # Добавляем поле для симуляции пересланного сообщения
+        if is_forwarded:
+            message_data['forward_from'] = User(id=999, is_bot=False, first_name="ForwardedUser")
+
+        return Message(**message_data)
 
     def test_add_and_retrieve_message(self):
         msg = self.create_mock_message(101, "Hello World")
@@ -56,6 +62,26 @@ class TestHistoryManager(unittest.TestCase):
         # Check that the last message (106) is present
         text_106 = self.manager.get_message_text(self.chat_id, 106)
         self.assertEqual(text_106, "Msg 6")
+
+    def test_ignore_forwarded_messages(self):
+        # 1. Add a regular message
+        reg_msg = self.create_mock_message(201, "Regular message")
+        self.manager.add_message(reg_msg)
+
+        # 2. Add a forwarded message
+        fwd_msg = self.create_mock_message(202, "Forwarded meme text", is_forwarded=True)
+        self.manager.add_message(fwd_msg)
+
+        # 3. Check history size (должен быть 1)
+        self.assertEqual(len(self.manager.history.get(self.chat_id, [])), 1)
+
+        # 4. Check if the regular message is present
+        text_reg = self.manager.get_message_text(self.chat_id, 201)
+        self.assertEqual(text_reg, "Regular message")
+
+        # 5. Check if the forwarded message is absent
+        text_fwd = self.manager.get_message_text(self.chat_id, 202)
+        self.assertEqual(text_fwd, "")
 
 if __name__ == '__main__':
     unittest.main()

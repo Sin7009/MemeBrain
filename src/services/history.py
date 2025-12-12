@@ -27,6 +27,12 @@ class HistoryManager:
             # Игнорируем сообщения без текста (фото, стикеры и т.д.)
             return
 
+        # --- ДОПОЛНЕНИЕ: Игнорируем пересланные сообщения (репосты) ---
+        # Если это репост или пересланное сообщение, мы его не сохраняем в историю.
+        if message.forward_from or message.forward_from_chat or message.forward_sender_name:
+            return
+        # --------------------------------------------------------------------
+
         if chat_id not in self.history:
             self.history[chat_id] = deque(maxlen=self.max_size)
 
