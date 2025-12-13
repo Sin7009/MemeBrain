@@ -47,5 +47,9 @@ class ImageSearcher:
             return None
 
         except requests.exceptions.RequestException as e:
-            print(f"Search: Ошибка при запросе к Google Search API: {e}")
+            # 🛡️ Sentinel: Sanitize error logs to prevent API key leakage
+            # The exception message often contains the full URL with query parameters (including the API key).
+            status_code = getattr(e.response, 'status_code', 'N/A')
+            error_type = type(e).__name__
+            print(f"Search: Ошибка при запросе к Google Search API ({error_type}, Status: {status_code})")
             return None
