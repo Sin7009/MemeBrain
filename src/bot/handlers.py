@@ -104,10 +104,15 @@ async def reaction_handler(reaction: MessageReactionUpdated):
 
     # 7. Отправка результата
     try:
+        # UX Improvement: Add meme text to caption for accessibility
+        top_text = meme_idea.get('top_text', '')
+        bottom_text = meme_idea.get('bottom_text', '')
+        caption_text = f"{top_text} {bottom_text}\n\n(Мем сгенерирован по реакции {reaction.new_reaction[0].emoji})"
+
         await reaction.bot.send_photo(
             chat_id=chat_id,
             photo=FSInputFile(final_image_path),
-            caption=f"Мем сгенерирован по реакции {reaction.new_reaction[0].emoji}!"
+            caption=caption_text
         )
     except Exception as e:
         print(f"Ошибка при отправке фото: {e}")
