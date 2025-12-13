@@ -3,6 +3,7 @@ import requests
 import io
 import textwrap
 from typing import List, Optional
+from functools import lru_cache
 
 class MemeGenerator:
     """
@@ -20,15 +21,24 @@ class MemeGenerator:
             self.font_path = None
             self.base_font = ImageFont.load_default()
 
-    def _download_image(self, url: str) -> Optional[Image.Image]:
-        """Скачивает изображение по URL и возвращает объект PIL Image."""
+    @staticmethod
+    @lru_cache(maxsize=128)
+    def _download_image_bytes(url: str) -> Optional[bytes]:
+        """Скачивает изображение по URL и возвращает байты. Кешируется."""
         try:
             response = requests.get(url, stream=True, timeout=10)
             response.raise_for_status()
-            return Image.open(io.BytesIO(response.content)).convert("RGB")
+            return response.content
         except requests.exceptions.RequestException as e:
             print(f"Ошибка при скачивании изображения: {e}")
             return None
+
+    def _download_image(self, url: str) -> Optional[Image.Image]:
+        """Скачивает изображение по URL и возвращает объект PIL Image."""
+        image_bytes = self._download_image_bytes(url)
+        if not image_bytes:
+            return None
+        return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
     def _draw_text_with_shadow(self, draw: ImageDraw.Draw, text: str, pos: tuple[int, int], font: ImageFont.ImageFont):
         """Рисует текст с черным контуром/тенью (классический мем-стиль)."""
