@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 import requests
 import io
 import textwrap
@@ -25,20 +25,41 @@ class MemeGenerator:
     @lru_cache(maxsize=128)
     def _download_image_bytes(url: str) -> Optional[bytes]:
         """Скачивает изображение по URL и возвращает байты. Кешируется."""
+        MAX_SIZE = 5 * 1024 * 1024  # 5 MB limit
         try:
-            response = requests.get(url, stream=True, timeout=10)
-            response.raise_for_status()
-            return response.content
+            with requests.get(url, stream=True, timeout=10) as response:
+                response.raise_for_status()
+
+                # Check Content-Length if present
+                content_length = response.headers.get('Content-Length')
+                if content_length and int(content_length) > MAX_SIZE:
+                    print(f"Изображение слишком большое: {content_length} байт")
+                    return None
+
+                content = b""
+                for chunk in response.iter_content(chunk_size=8192):
+                    content += chunk
+                    if len(content) > MAX_SIZE:
+                        print("Превышен лимит размера изображения")
+                        return None
+                return content
         except requests.exceptions.RequestException as e:
             print(f"Ошибка при скачивании изображения: {e}")
             return None
+        except ValueError:
+             print("Ошибка парсинга Content-Length")
+             return None
 
     def _download_image(self, url: str) -> Optional[Image.Image]:
         """Скачивает изображение по URL и возвращает объект PIL Image."""
         image_bytes = self._download_image_bytes(url)
         if not image_bytes:
             return None
-        return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        try:
+            return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        except (UnidentifiedImageError, Exception) as e:
+            print(f"Ошибка при открытии изображения: {e}")
+            return None
 
     def _draw_text_with_shadow(self, draw: ImageDraw.Draw, text: str, pos: tuple[int, int], font: ImageFont.ImageFont):
         """Рисует текст с черным контуром/тенью (классический мем-стиль)."""
@@ -52,12 +73,6 @@ class MemeGenerator:
     def _wrap_text(self, text: str, max_width: int, font: ImageFont.ImageFont) -> List[str]:
         """Оборачивает текст, чтобы он умещался по ширине изображения."""
         lines = []
-        
-        # In newer Pillow, getsize is deprecated. Using getbbox or getlength.
-        # But for compatibility with the user provided code which used getsize, I will adapt.
-        # However, to be safe against deprecation warnings or errors in latest Pillow (>=10.0),
-        # I should use getbbox or getlength.
-        # Let's try to stick to what works. textwrap works on characters, not pixels.
         
         # Calculate roughly characters that fit.
         # We need a way to measure text width.
@@ -100,6 +115,12 @@ class MemeGenerator:
         
         # Увеличиваем размер шрифта пропорционально ширине изображения
         width, height = img.size
+
+        # 🛡️ Sentinel: Prevent division by zero on tiny images
+        if width < 10 or height < 10:
+            print(f"Image too small: {width}x{height}")
+            return None
+
         font_size = max(int(width / 20), 20)
         
         font = None
@@ -111,9 +132,6 @@ class MemeGenerator:
         
         if font is None:
              font = ImageFont.load_default()
-             # Default font size is fixed in old pillow, but in new it can be scalable if it's a truetype font.
-             # ImageFont.load_default() returns a bitmap font usually which is not scalable.
-             # But let's hope for the best or that arial.ttf exists or we accept small font.
         
         draw = ImageDraw.Draw(img)
 
