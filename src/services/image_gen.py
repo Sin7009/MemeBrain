@@ -43,11 +43,15 @@ class MemeGenerator:
     def _draw_text_with_shadow(self, draw: ImageDraw.Draw, text: str, pos: tuple[int, int], font: ImageFont.ImageFont):
         """Рисует текст с черным контуром/тенью (классический мем-стиль)."""
         x, y = pos
-        # Черный контур
-        for dx, dy in [(1, 1), (1, -1), (-1, 1), (-1, -1)]:
-            draw.text((x + dx, y + dy), text, font=font, fill=(0, 0, 0))
-        # Белый текст
-        draw.text((x, y), text, font=font, fill=(255, 255, 255))
+        # Using built-in stroke which is faster (C-implementation) than drawing 5 times in Python
+        draw.text(
+            (x, y),
+            text,
+            font=font,
+            fill=(255, 255, 255),
+            stroke_width=2,
+            stroke_fill=(0, 0, 0)
+        )
 
     def _wrap_text(self, text: str, max_width: int, font: ImageFont.ImageFont) -> List[str]:
         """Оборачивает текст, чтобы он умещался по ширине изображения."""
