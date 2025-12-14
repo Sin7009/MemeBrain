@@ -88,8 +88,15 @@ class MemeGenerator:
         avg_char_width = get_text_width("A", font)
         max_chars_per_line = int(max_width // avg_char_width) if avg_char_width > 0 else 1
         
+        # Ensure max_chars_per_line is at least 1 to avoid textwrap.wrap(width=0) error
+        # This can happen if the image is very small (e.g. < character width)
+        if max_chars_per_line < 1:
+            max_chars_per_line = 1
+
         # Используем textwrap для базового переноса
-        wrapped_lines = textwrap.wrap(text, width=int(max_chars_per_line * 1.5), break_long_words=False)
+        # We ensure width is at least 1, even if max_chars_per_line * 1.5 casts to 0 (unlikely if max_chars_per_line >= 1)
+        wrap_width = max(1, int(max_chars_per_line * 1.5))
+        wrapped_lines = textwrap.wrap(text, width=wrap_width, break_long_words=False)
         
         # Дополнительная проверка на ширину
         for line in wrapped_lines:
