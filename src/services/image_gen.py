@@ -36,13 +36,16 @@ class MemeGenerator:
                     print(f"Изображение слишком большое: {content_length} байт")
                     return None
 
-                content = b""
+                # ⚡ Optimized: Use io.BytesIO for O(N) accumulation instead of O(N^2) string/bytes concatenation
+                buffer = io.BytesIO()
+                downloaded_size = 0
                 for chunk in response.iter_content(chunk_size=8192):
-                    content += chunk
-                    if len(content) > MAX_SIZE:
+                    buffer.write(chunk)
+                    downloaded_size += len(chunk)
+                    if downloaded_size > MAX_SIZE:
                         print("Превышен лимит размера изображения")
                         return None
-                return content
+                return buffer.getvalue()
         except requests.exceptions.RequestException as e:
             print(f"Ошибка при скачивании изображения: {e}")
             return None
