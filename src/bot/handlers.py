@@ -9,6 +9,7 @@ from ..services.face_swap import FaceSwapper
 import os
 import html
 import asyncio
+import logging
 
 router = Router()
 
@@ -61,8 +62,17 @@ async def generate_and_send_meme(
     # 2. LLM: Генерация идеи мема
     meme_idea = meme_brain.generate_meme_idea(context_messages, triggered_text, reaction_context)
 
-    if not meme_idea or not meme_idea.get('is_memable'):
+    if not meme_idea:
+        logging.error("❌ ОШИБКА: LLM вернула пустоту. Скорее всего, сломался JSON из-за мата или фильтров OpenAI.")
+        # Опционально: сказать юзеру, что бот сломался
+        await bot_instance.send_message(chat_id, "Мозги сломались, слишком сложно!", reply_to_message_id=reply_to_message_id)
         return
+
+    if not meme_idea.get('is_memable'):
+        logging.warning("⚠️ ОТКАЗ: Нейросеть решила, что это не смешно (или сработал фильтр).")
+        return
+
+    logging.info(f"✅ Идея сгенерирована: {meme_idea.get('top_text')} / {meme_idea.get('bottom_text')}")
 
     query = meme_idea['search_query']
 
