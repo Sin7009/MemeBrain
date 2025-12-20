@@ -33,9 +33,16 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # 👇 Вот правильная полная настройка
           tags: |
+            # Тег "latest" только для дефолтной ветки (main/master)
             type=raw,value=latest,enable={{is_default_branch}}
+            # Тег с именем ветки (например, main)
             type=ref,event=branch
+            # Тег с git-тегом (если будешь релизить v1.0.0)
+            type=ref,event=tag
+            # Тег для Pull Request (pr-123)
+            type=ref,event=pr
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
