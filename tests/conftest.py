@@ -5,16 +5,19 @@ from PIL import Image
 
 # Set dummy env vars for pydantic validation BEFORE importing src modules
 os.environ["TELEGRAM_BOT_TOKEN"] = "dummy_token"
-os.environ["GOOGLE_SEARCH_API_KEY"] = "dummy_key"
-os.environ["GOOGLE_SEARCH_CX_ID"] = "dummy_cx"
+os.environ["TAVILY_API_KEY"] = "dummy_key"
 os.environ["OPENROUTER_API_KEY"] = "dummy_openrouter"
+# Clean up old vars if they interfere (though pydantic allows extra)
+if "GOOGLE_SEARCH_API_KEY" in os.environ:
+    del os.environ["GOOGLE_SEARCH_API_KEY"]
+if "GOOGLE_SEARCH_CX_ID" in os.environ:
+    del os.environ["GOOGLE_SEARCH_CX_ID"]
 
 @pytest.fixture(autouse=True)
 def mock_settings_env():
     """Ensure env vars are set for all tests."""
     os.environ["TELEGRAM_BOT_TOKEN"] = "dummy_token"
-    os.environ["GOOGLE_SEARCH_API_KEY"] = "dummy_key"
-    os.environ["GOOGLE_SEARCH_CX_ID"] = "dummy_cx"
+    os.environ["TAVILY_API_KEY"] = "dummy_key"
     os.environ["OPENROUTER_API_KEY"] = "dummy_openrouter"
 
 @pytest.fixture

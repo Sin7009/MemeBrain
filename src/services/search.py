@@ -4,13 +4,12 @@ from .config import config
 
 class ImageSearcher:
     """
-    Сервис поиска картинок через Google Custom Search JSON API.
+    Сервис поиска картинок через Tavily API.
     """
-    API_URL = "https://www.googleapis.com/customsearch/v1"
+    API_URL = "https://api.tavily.com/search"
 
     def __init__(self):
-        self.api_key = config.GOOGLE_SEARCH_API_KEY
-        self.cx_id = config.GOOGLE_SEARCH_CX_ID
+        self.api_key = config.TAVILY_API_KEY
         self.mock_enabled = config.SEARCH_MOCK_ENABLED
 
     def search_template(self, query: str) -> Optional[str]:
@@ -20,36 +19,36 @@ class ImageSearcher:
         if self.mock_enabled:
             print(f"Search: Используется мок-режим для запроса '{query}'.")
             # Ссылка на простой шаблон для тестирования
-            # Используем placeholder image service, который стабильнее imgur для тестов
             return "https://placehold.co/600x400.png" 
 
-        params = {
-            "key": self.api_key,
-            "cx": self.cx_id,
-            "q": query,
-            "searchType": "image",  # Ищем только изображения
-            "num": 1,               # Берем только один результат
-            "fileType": "png|jpg|jpeg",
-            "safe": "active",       # Умеренная фильтрация
+        payload = {
+            "api_key": self.api_key,
+            "query": query,
+            "search_depth": "basic",
+            "include_images": True,
+            "include_answer": False,
+            "include_raw_content": False,
+            "max_results": 1
         }
 
         try:
-            response = requests.get(self.API_URL, params=params, timeout=5)
+            response = requests.post(self.API_URL, json=payload, timeout=10)
             response.raise_for_status()
             data = response.json()
 
-            # Проверяем наличие результатов
-            if 'items' in data and data['items']:
+            # Tavily returns a list of image URLs in the 'images' field
+            if 'images' in data and data['images']:
                 # Возвращаем прямую ссылку на изображение
-                return data['items'][0].get('link')
+                # data['images'] is a list of strings (URLs)
+                return data['images'][0]
             
             print(f"Search: Результаты для '{query}' не найдены.")
             return None
 
         except requests.exceptions.RequestException as e:
             # 🛡️ Sentinel: Sanitize error logs to prevent API key leakage
-            # The exception message often contains the full URL with query parameters (including the API key).
             status_code = getattr(e.response, 'status_code', 'N/A')
             error_type = type(e).__name__
-            print(f"Search: Ошибка при запросе к Google Search API ({error_type}, Status: {status_code})")
+            # Tavily keys are in the body, but good to be safe about URL params anyway
+            print(f"Search: Ошибка при запросе к Tavily API ({error_type}, Status: {status_code})")
             return None

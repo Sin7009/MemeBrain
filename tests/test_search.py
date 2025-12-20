@@ -13,28 +13,35 @@ def searcher():
 
 def test_search_template_success(searcher):
     mock_response = MagicMock()
+    # Mock Tavily response structure
     mock_response.json.return_value = {
-        "items": [
-            {"link": "http://example.com/meme.jpg"}
-        ]
+        "images": [
+            "http://example.com/meme.jpg",
+            "http://example.com/meme2.jpg"
+        ],
+        "results": []
     }
     mock_response.raise_for_status.return_value = None
 
-    with patch('requests.get', return_value=mock_response) as mock_get:
+    with patch('requests.post', return_value=mock_response) as mock_post:
         url = searcher.search_template("funny cat")
         assert url == "http://example.com/meme.jpg"
-        mock_get.assert_called_once()
+        mock_post.assert_called_once()
+        # Verify call args
+        args, kwargs = mock_post.call_args
+        assert kwargs['json']['query'] == "funny cat"
+        assert kwargs['json']['include_images'] is True
 
 def test_search_template_no_results(searcher):
     mock_response = MagicMock()
-    mock_response.json.return_value = {}
+    mock_response.json.return_value = {"images": []}
 
-    with patch('requests.get', return_value=mock_response):
+    with patch('requests.post', return_value=mock_response):
         url = searcher.search_template("ghost")
         assert url is None
 
 def test_search_template_error(searcher):
     # This simulates a request exception which is caught and logged
-    with patch('requests.get', side_effect=requests.exceptions.RequestException("API Error")):
+    with patch('requests.post', side_effect=requests.exceptions.RequestException("API Error")):
         url = searcher.search_template("crash")
         assert url is None

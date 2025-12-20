@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meme-bot-deployment
+  labels:
+    app: meme-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: meme-bot
+  template:
+    metadata:
+      labels:
+        app: meme-bot
+    spec:
+      containers:
+      - name: meme-bot
+        image: ghcr.io/USERNAME/REPOSITORY:latest
+        imagePullPolicy: Always
+        env:
+        - name: TELEGRAM_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: meme-bot-secrets
+              key: telegram-bot-token
+        - name: TAVILY_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: meme-bot-secrets
+              key: tavily-api-key
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: meme-bot-secrets
+              key: openrouter-api-key
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "250m"

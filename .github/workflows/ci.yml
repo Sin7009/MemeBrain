@@ -28,8 +28,7 @@ jobs:
     - name: Run tests
       env:
         TELEGRAM_BOT_TOKEN: dummy_token
-        GOOGLE_SEARCH_API_KEY: dummy_key
-        GOOGLE_SEARCH_CX_ID: dummy_cx
+        TAVILY_API_KEY: dummy_key
         OPENROUTER_API_KEY: dummy_key
         PYTHONPATH: .
       run: |
