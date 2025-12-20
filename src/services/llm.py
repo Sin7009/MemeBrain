@@ -31,7 +31,7 @@ class MemeBrain:
         self.model = config.OPENROUTER_MODEL
         self.mock_enabled = config.LLM_MOCK_ENABLED
 
-    def generate_meme_idea(self, context_messages: List[str], triggered_text: str) -> Optional[Dict[str, Any]]:
+    def generate_meme_idea(self, context_messages: List[str], triggered_text: str, reaction_context: str = None) -> Optional[Dict[str, Any]]:
         """Генерирует текст и запрос для поиска шаблона."""
         if self.mock_enabled:
             print("LLM: Используется мок-режим.")
@@ -44,9 +44,17 @@ class MemeBrain:
 
         # Формирование промпта
         context_str = "\n".join(context_messages)
+        reaction_instruction = ""
+        if reaction_context:
+            reaction_instruction = f"""
+        ВАЖНО: Пользователь отреагировал на это сообщение эмодзи, которое означает: "{reaction_context}".
+        Мем должен обязательно отражать эту эмоцию/реакцию (например, если это гнев - мем должен быть злым, если смех - смешным, если любовь - милым).
+            """
+
         prompt = f"""
         Ты — нейросеть для генерации мемов в Телеграм-чатах. Тебе предоставлена история диалога.
-        Последнее сообщение, на которое была поставлена реакция, это: "{triggered_text}".
+        Последнее сообщение, на которое была поставлена реакция (или отправлено в лс), это: "{triggered_text}".
+        {reaction_instruction}
         
         ИСТОРИЯ ДИАЛОГА (включая сообщение-триггер):
         ---
