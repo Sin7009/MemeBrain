@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: meme-bot
-        image: ghcr.io/USERNAME/REPOSITORY:latest
+        image: ghcr.io/Sin7009/MemeBrain:latest
         imagePullPolicy: Always
         env:
         - name: TELEGRAM_BOT_TOKEN
