@@ -21,6 +21,9 @@ MOCK_CONTEXT = [
 MOCK_TRIGGER_TEXT = "Зато я сегодня запустил юнит-тесты без ошибок с первого раза!"
 TEST_OUTPUT_FILE = "test_meme_result.jpg"
 
+import pytest
+
+@pytest.mark.asyncio
 async def test_full_pipeline_mock():
     print("--- 🧪 Запуск локального тестирования пайплайна (Mock Mode) ---")
     
