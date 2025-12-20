@@ -14,9 +14,8 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
     LLM_MOCK_ENABLED: bool = False
     
-    # Google Search
-    GOOGLE_SEARCH_API_KEY: str
-    GOOGLE_SEARCH_CX_ID: str
+    # Tavily Search
+    TAVILY_API_KEY: str
     SEARCH_MOCK_ENABLED: bool = False
     
     # Face Swap
