@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     # OpenRouter/LLM
     OPENROUTER_API_KEY: str
-    OPENROUTER_MODEL: str = "openai/gpt-4o-mini"
+    OPENROUTER_MODEL: str = "google/gemini-3-flash-preview"
     LLM_MOCK_ENABLED: bool = False
     
     # Tavily Search
