@@ -84,8 +84,16 @@ class MemeBrain:
             # Парсинг ответа
             result = safe_json_parse(response.choices[0].message.content)
             
+            # Validate required fields
             if result and result.get("is_memable"):
-                return result
+                required_fields = ["top_text", "bottom_text", "search_query"]
+                if all(field in result for field in required_fields):
+                    return result
+                else:
+                    print(f"LLM response missing required fields: {result}")
+                    return None
+            
+            return None
             
         except Exception as e:
             print(f"Ошибка LLM-запроса через OpenRouter: {e}")

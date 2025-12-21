@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message, MessageReactionUpdated, FSInputFile
 from aiogram.filters import Command
+from aiogram import Bot
 from ..services.history import history_manager
 from ..services.llm import MemeBrain
 from ..services.search import ImageSearcher
@@ -10,6 +11,7 @@ import os
 import html
 import asyncio
 import logging
+from typing import List, Optional
 
 router = Router()
 
@@ -44,20 +46,33 @@ TEMP_OUTPUT_FILE = "temp_meme.jpg"
 async def generate_and_send_meme(
     chat_id: int,
     triggered_text: str,
-    context_messages: list,
-    reaction_context: str = None,
-    reply_to_message_id: int = None,
-    bot_instance = None,
-    trigger_emoji: str = None
-):
+    context_messages: List[str],
+    reaction_context: Optional[str] = None,
+    reply_to_message_id: Optional[int] = None,
+    bot_instance: Optional[Bot] = None,
+    trigger_emoji: Optional[str] = None
+) -> None:
     """
     Общая логика генерации и отправки мема.
     """
+    # Validate input
+    if not bot_instance:
+        logging.error("bot_instance is required for generate_and_send_meme")
+        return
+    
+    if not triggered_text or not triggered_text.strip():
+        logging.warning("Skipping meme generation: triggered_text is empty")
+        return
+    
+    if not context_messages:
+        logging.warning("Skipping meme generation: context_messages is empty")
+        return
+    
     # 1. Показываем активность "печатает"
     try:
         await bot_instance.send_chat_action(chat_id, 'typing')
     except Exception as e:
-        print(f"Не удалось отправить chat action: {e}")
+        logging.error(f"Не удалось отправить chat action: {e}")
 
     # 2. LLM: Генерация идеи мема
     meme_idea = meme_brain.generate_meme_idea(context_messages, triggered_text, reaction_context)
@@ -123,11 +138,18 @@ async def generate_and_send_meme(
             reply_to_message_id=reply_to_message_id
         )
     except Exception as e:
-        print(f"Ошибка при отправке фото: {e}")
-        await bot_instance.send_message(chat_id, "Ошибка отправки мема.", reply_to_message_id=reply_to_message_id)
+        logging.error(f"Ошибка при отправке фото: {e}")
+        try:
+            await bot_instance.send_message(chat_id, "Ошибка отправки мема.", reply_to_message_id=reply_to_message_id)
+        except Exception as nested_e:
+            logging.error(f"Не удалось отправить сообщение об ошибке: {nested_e}")
     finally:
+        # Clean up temporary file
         if os.path.exists(final_image_path):
-            os.remove(final_image_path)
+            try:
+                os.remove(final_image_path)
+            except Exception as e:
+                logging.error(f"Не удалось удалить временный файл {final_image_path}: {e}")
 
 
 # Хендлер для реакции - основной триггер
@@ -139,6 +161,10 @@ async def reaction_handler(reaction: MessageReactionUpdated):
     chat_id = reaction.chat.id
     trigger_emoji = reaction.new_reaction[0].emoji
     reaction_meaning = MEME_TRIGGERS.get(trigger_emoji)
+    
+    if not reaction_meaning:
+        logging.warning(f"Unknown trigger emoji: {trigger_emoji}")
+        return
 
     # Получаем контекст из HistoryManager
     context_messages = history_manager.get_context(chat_id, reaction.message_id)
@@ -157,7 +183,7 @@ async def reaction_handler(reaction: MessageReactionUpdated):
                 parse_mode='HTML'
             )
         except Exception as e:
-            print(f"Не удалось отправить сообщение об ошибке истории: {e}")
+            logging.error(f"Не удалось отправить сообщение об ошибке истории: {e}")
         return
 
     await generate_and_send_meme(
@@ -179,8 +205,11 @@ async def message_handler(message: Message):
     1. Сохраняет их в историю.
     2. В личных сообщениях (private) автоматически генерирует мем.
     """
-    if message.text:
+    if message.text and message.text.strip():
         history_manager.add_message(message)
+    else:
+        # Skip empty messages
+        return
 
     # Логика для Личных Сообщений (DM)
     if message.chat.type == 'private' and not message.text.startswith('/'):
@@ -189,6 +218,13 @@ async def message_handler(message: Message):
 
         # Получаем контекст (последние сообщения, включая текущее)
         context_messages = history_manager.get_context(message.chat.id, message.message_id)
+        
+        if not context_messages:
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+            return
 
         # Запускаем генерацию
         # В качестве reaction_context передаем нейтральный или специфичный для ЛС контекст
