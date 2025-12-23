@@ -1,54 +1,47 @@
-# Code Quality & Security Audit Report
+# Code Quality Audit Report
 
-## Summary
-This audit identifies areas of technical debt, "ghost code" (unused/commented logic), documentation gaps, and potential security improvements. The focus is on maintainability and hygiene without altering core business logic.
+## `src/main.py`
+*   **[LOW] Ghost Code:** `load_dotenv` imported inside `if __name__ == "__main__":`.
+    *   *Action:* Move `from dotenv import load_dotenv` to top-level imports or remove if handled by `pydantic-settings` (it usually is).
+*   **[MEDIUM] Documentation:** `main` function lacks a docstring.
+    *   *Action:* Add a docstring explaining the entry point logic.
 
-## Findings
-
-### `src/bot/handlers.py`
-**Severity:** [MEDIUM]
-*   **Ghost Code:** `TEMP_OUTPUT_FILE` constant is defined but unused (replaced by `unique_output_file` in logic).
-    *   *Action:* Remove `TEMP_OUTPUT_FILE` and update comments to reflect the actual race-condition-free implementation.
-*   **Naming:** `bot_instance` variable name in `generate_and_send_meme` is slightly verbose.
-    *   *Action:* Rename `bot_instance` to `bot` (standard aiogram convention).
-*   **Error Handling:** Uses `print(...)` for error logging instead of the configured `logging` module.
-    *   *Action:* Replace `print` with `logging.error`.
-
-### `src/services/face_swap.py`
-**Severity:** [HIGH]
-*   **Ghost Code:** The `FaceSwapper` class is effectively a placeholder/ghost feature. Core logic is commented out.
-    *   *Action:* Move file to `prototypes/` or delete until feature is actively developed to reduce noise.
-*   **TODO Archeology:** Heavy "TODO-style" comments (`# Тут будет логика...`, `# ВАЖНО: Комментируем...`).
-    *   *Action:* Convert to standard `TODO` markers or track in issue tracker; remove code comments.
-
-### `src/utils.py`
-**Severity:** [LOW]
-*   **Ghost Code:** `clean_filename` function is defined but not used anywhere in the codebase.
-    *   *Action:* Remove `clean_filename` function.
-*   **Error Handling:** Uses `print(...)` inside `safe_json_parse`.
-    *   *Action:* Replace `print` with `logging.warning`.
-
-### `src/services/image_gen.py`
-**Severity:** [LOW]
-*   **Documentation/Structure:** `get_text_width` and `get_text_size` are helper functions defined *inside* methods.
-    *   *Action:* Refactor these into private static methods (e.g., `_get_text_width`) to declutter the main logic.
-*   **Error Handling:** Uses `print(...)` for logging errors (e.g., network issues, image size limits).
+## `src/utils.py`
+*   **[LOW] Ghost Code:** `clean_filename` function is defined but never used in the codebase.
+    *   *Action:* Remove `clean_filename` function if confirmed unnecessary.
+*   **[LOW] Ghost Code:** `print` statements used in `safe_json_parse`.
     *   *Action:* Replace `print` with `logging.error` or `logging.warning`.
+*   **[MEDIUM] Documentation:** Inconsistent docstring languages (Russian vs. English).
+    *   *Action:* Standardize docstrings to English (or Russian, but be consistent).
 
-### `src/services/llm.py`
-**Severity:** [LOW]
-*   **Security/Configuration:** `HTTP-Referer` header is hardcoded to a placeholder (`https://t.me/your_meme_bot`).
-    *   *Action:* Move this value to `src/services/config.py` as `BOT_URL`.
-*   **Error Handling:** Uses `print(...)` for API errors.
-    *   *Action:* Replace `print` with `logging.error`.
+## `src/bot/handlers.py`
+*   **[LOW] Ghost Code:** `TEMP_OUTPUT_FILE` constant is unused; logic uses `unique_output_file`.
+    *   *Action:* Remove `TEMP_OUTPUT_FILE` constant.
+*   **[LOW] Ghost Code:** `face_swapper` instance is initialized but never used in any handler.
+    *   *Action:* Remove `face_swapper` initialization and import until the feature is implemented.
+*   **[MEDIUM] Complexity:** `generate_and_send_meme` is a complex function (> 15 lines) handling multiple responsibilities.
+    *   *Action:* Refactor `generate_and_send_meme` into smaller helper functions (e.g., `_generate_meme_content`, `_send_meme_to_chat`).
+*   **[LOW] Naming:** Variable name `bot_instance` is verbose.
+    *   *Action:* Rename `bot_instance` to `bot`.
 
-### `src/services/search.py`
-**Severity:** [LOW]
-*   **Error Handling:** Uses `print(...)` for errors.
-    *   *Action:* Replace `print` with `logging.error`.
+## `src/services/face_swap.py`
+*   **[HIGH] Ghost Code:** Entire class is a placeholder with large commented-out blocks (`insightface`, `cv2`, `onnxruntime`).
+    *   *Action:* Remove the file if face swap is not planned for immediate release, or use a proper feature flag mechanism without commenting out code.
+*   **[LOW] Ghost Code:** `print` statements used for logging.
+    *   *Action:* Replace `print` with `logging`.
+*   **[LOW] TODO Archeology:** Implicit TODOs in comments: `# Тут будет логика...`, `# ВАЖНО...`.
+    *   *Action:* Convert these to explicit `# TODO: Implement ...` markers or track in issue tracker.
 
-## Security Sanity Check
+## `src/services/image_gen.py`
+*   **[LOW] Ghost Code:** `_download_image_bytes` uses `print` for errors.
+    *   *Action:* Replace `print` with `logging`.
 
-1.  **Race Condition:** The potential race condition in `handlers.py` (file collisions) was previously identified but **has been fixed** in the code (`unique_output_file`). However, the confusing comments and unused `TEMP_OUTPUT_FILE` constant remain, creating a risk that someone might revert to the "simple" (broken) logic based on the comments.
-2.  **Secrets:** No hardcoded API keys found. Mocks are enabled/disabled via config.
-3.  **Input Sanitization:** `html.escape` is correctly used in `handlers.py`.
+## `src/services/config.py`
+*   **[MEDIUM] Documentation:** Inconsistent docstring languages (Russian vs. English).
+    *   *Action:* Standardize docstrings to English.
+*   **[LOW] Security:** `OPENROUTER_MODEL` default value `google/gemini-3-flash-preview` is hardcoded.
+    *   *Action:* Ensure this defaults to a stable model or is purely environment-driven.
+
+## `src/services/search.py`
+*   **[LOW] Security:** `API_URL` is hardcoded (`https://api.tavily.com/search`).
+    *   *Action:* Move `API_URL` to `config.py` (low priority, but good practice).

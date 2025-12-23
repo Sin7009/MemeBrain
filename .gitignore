@@ -205,9 +205,3 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-
-# MemeBrain specific
-temp_meme*.jpg
-cache/
-*.onnx
-~/.insightface/
