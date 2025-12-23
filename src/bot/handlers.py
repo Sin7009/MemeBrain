@@ -7,13 +7,10 @@ from ..services.llm import MemeBrain
 from ..services.search import ImageSearcher
 from ..services.image_gen import MemeGenerator
 from ..services.face_swap import FaceSwapper
-from ..services.database import db_service
-from ..services.metrics import metrics_service
 import os
 import html
 import asyncio
 import logging
-import time
 from typing import List, Optional
 
 router = Router()
@@ -58,58 +55,36 @@ async def generate_and_send_meme(
     """
     Общая логика генерации и отправки мема.
     """
-    start_time = time.time()
-    
     # Validate input
     if not bot_instance:
         logging.error("bot_instance is required for generate_and_send_meme")
-        metrics_service.record_meme_generation('failed', trigger_emoji or 'unknown')
         return
     
     if not triggered_text or not triggered_text.strip():
         logging.warning("Skipping meme generation: triggered_text is empty")
-        metrics_service.record_meme_generation('skipped', trigger_emoji or 'unknown')
         return
     
     if not context_messages:
         logging.warning("Skipping meme generation: context_messages is empty")
-        metrics_service.record_meme_generation('skipped', trigger_emoji or 'unknown')
         return
     
     # 1. Показываем активность "печатает"
     try:
         await bot_instance.send_chat_action(chat_id, 'typing')
-        metrics_service.record_api_call('telegram', 'success')
     except Exception as e:
         logging.error(f"Не удалось отправить chat action: {e}")
-        metrics_service.record_api_call('telegram', 'failed')
 
     # 2. LLM: Генерация идеи мема
-    with metrics_service.time_stage('llm'):
-        meme_idea = meme_brain.generate_meme_idea(context_messages, triggered_text, reaction_context)
+    meme_idea = meme_brain.generate_meme_idea(context_messages, triggered_text, reaction_context)
 
     if not meme_idea:
         logging.error("❌ ОШИБКА: LLM вернула пустоту. Скорее всего, сломался JSON из-за мата или фильтров OpenAI.")
-        metrics_service.record_meme_generation('failed', trigger_emoji or 'unknown')
-        metrics_service.record_api_call('llm', 'failed')
-        # Логируем в БД
-        await db_service.log_meme_generation(
-            chat_id=chat_id,
-            user_id=None,
-            trigger_emoji=trigger_emoji,
-            search_query="",
-            success=False,
-            error_message="LLM returned empty response"
-        )
         # Опционально: сказать юзеру, что бот сломался
         await bot_instance.send_message(chat_id, "Мозги сломались, слишком сложно!", reply_to_message_id=reply_to_message_id)
         return
-    
-    metrics_service.record_api_call('llm', 'success')
 
     if not meme_idea.get('is_memable'):
         logging.warning("⚠️ ОТКАЗ: Нейросеть решила, что это не смешно (или сработал фильтр).")
-        metrics_service.record_meme_generation('skipped', trigger_emoji or 'unknown')
         return
 
     logging.info(f"✅ Идея сгенерирована: {meme_idea.get('top_text')} / {meme_idea.get('bottom_text')}")
@@ -117,20 +92,9 @@ async def generate_and_send_meme(
     query = meme_idea['search_query']
 
     # 3. Search: Поиск шаблона
-    with metrics_service.time_stage('search'):
-        template_url = image_searcher.search_template(query + " meme template")
+    template_url = image_searcher.search_template(query + " meme template")
 
     if not template_url:
-        metrics_service.record_meme_generation('failed', trigger_emoji or 'unknown')
-        metrics_service.record_api_call('search', 'failed')
-        await db_service.log_meme_generation(
-            chat_id=chat_id,
-            user_id=None,
-            trigger_emoji=trigger_emoji,
-            search_query=query,
-            success=False,
-            error_message="Template not found"
-        )
         await bot_instance.send_message(
             chat_id,
             f"🎨 <b>Шаблон не найден!</b>\n\n"
@@ -139,30 +103,21 @@ async def generate_and_send_meme(
             reply_to_message_id=reply_to_message_id
         )
         return
-    
-    metrics_service.record_api_call('search', 'success')
 
     # 4. Image Generation: Создание мема
+    # Используем уникальное имя файла для каждого запроса, чтобы избежать гонок (в простой реализации)
+    # Но для сохранения логики с TEMP_OUTPUT_FILE будем пока использовать его, зная о рисках.
+    # Лучше сделать уникальным.
     unique_output_file = f"temp_meme_{chat_id}_{reply_to_message_id}.jpg"
     
-    with metrics_service.time_stage('image_gen'):
-        final_image_path = meme_generator.create_meme(
-            image_url=template_url,
-            top_text=meme_idea['top_text'],
-            bottom_text=meme_idea['bottom_text'],
-            output_path=unique_output_file
-        )
+    final_image_path = meme_generator.create_meme(
+        image_url=template_url,
+        top_text=meme_idea['top_text'],
+        bottom_text=meme_idea['bottom_text'],
+        output_path=unique_output_file
+    )
 
     if not final_image_path:
-        metrics_service.record_meme_generation('failed', trigger_emoji or 'unknown')
-        await db_service.log_meme_generation(
-            chat_id=chat_id,
-            user_id=None,
-            trigger_emoji=trigger_emoji,
-            search_query=query,
-            success=False,
-            error_message="Failed to create meme"
-        )
         await bot_instance.send_message(chat_id, "Не удалось создать картинку из шаблона.", reply_to_message_id=reply_to_message_id)
         return
 
@@ -182,26 +137,8 @@ async def generate_and_send_meme(
             parse_mode='HTML',
             reply_to_message_id=reply_to_message_id
         )
-        
-        # Успешная генерация
-        generation_time = time.time() - start_time
-        metrics_service.record_meme_generation('success', trigger_emoji or 'unknown')
-        metrics_service.record_generation_duration('total', generation_time)
-        metrics_service.record_api_call('telegram', 'success')
-        
-        await db_service.log_meme_generation(
-            chat_id=chat_id,
-            user_id=None,
-            trigger_emoji=trigger_emoji,
-            search_query=query,
-            success=True,
-            generation_time=generation_time
-        )
-        
     except Exception as e:
         logging.error(f"Ошибка при отправке фото: {e}")
-        metrics_service.record_meme_generation('failed', trigger_emoji or 'unknown')
-        metrics_service.record_api_call('telegram', 'failed')
         try:
             await bot_instance.send_message(chat_id, "Ошибка отправки мема.", reply_to_message_id=reply_to_message_id)
         except Exception as nested_e:
@@ -224,9 +161,6 @@ async def reaction_handler(reaction: MessageReactionUpdated):
     chat_id = reaction.chat.id
     trigger_emoji = reaction.new_reaction[0].emoji
     reaction_meaning = MEME_TRIGGERS.get(trigger_emoji)
-    
-    # Записываем метрику реакции
-    metrics_service.record_reaction(trigger_emoji)
     
     if not reaction_meaning:
         logging.warning(f"Unknown trigger emoji: {trigger_emoji}")
@@ -273,18 +207,6 @@ async def message_handler(message: Message):
     """
     if message.text and message.text.strip():
         history_manager.add_message(message)
-        
-        # Записываем метрику обработанного сообщения
-        metrics_service.record_message_processed(message.chat.type)
-        
-        # Сохраняем в БД
-        await db_service.save_message(
-            chat_id=message.chat.id,
-            message_id=message.message_id,
-            user_id=message.from_user.id if message.from_user else None,
-            username=message.from_user.username if message.from_user else None,
-            text=message.text
-        )
     else:
         # Skip empty messages
         return
