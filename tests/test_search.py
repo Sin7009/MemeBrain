@@ -6,9 +6,11 @@ import requests
 
 @pytest.fixture
 def searcher():
-    with patch.object(config, 'SEARCH_MOCK_ENABLED', False):
+    with patch.object(config, 'SEARCH_MOCK_ENABLED', False), \
+         patch.object(config, 'CACHE_ENABLED', False):
         searcher_instance = ImageSearcher()
         searcher_instance.mock_enabled = False
+        searcher_instance.cache_enabled = False
         yield searcher_instance
 
 def test_search_template_success(searcher):
@@ -23,7 +25,7 @@ def test_search_template_success(searcher):
     }
     mock_response.raise_for_status.return_value = None
 
-    with patch('requests.post', return_value=mock_response) as mock_post:
+    with patch('src.services.search.requests.post', return_value=mock_response) as mock_post:
         url = searcher.search_template("funny cat")
         assert url == "http://example.com/meme.jpg"
         mock_post.assert_called_once()
@@ -36,12 +38,12 @@ def test_search_template_no_results(searcher):
     mock_response = MagicMock()
     mock_response.json.return_value = {"images": []}
 
-    with patch('requests.post', return_value=mock_response):
+    with patch('src.services.search.requests.post', return_value=mock_response):
         url = searcher.search_template("ghost")
         assert url is None
 
 def test_search_template_error(searcher):
     # This simulates a request exception which is caught and logged
-    with patch('requests.post', side_effect=requests.exceptions.RequestException("API Error")):
+    with patch('src.services.search.requests.post', side_effect=requests.exceptions.RequestException("API Error")):
         url = searcher.search_template("crash")
         assert url is None
