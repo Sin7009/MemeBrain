@@ -18,6 +18,7 @@ def create_message(text="Hello", chat_id=123, user_id=456, chat_type='private'):
     msg.from_user = AsyncMock(spec=User)
     msg.from_user.id = user_id
     msg.from_user.first_name = "User"
+    msg.from_user.username = "testuser"
     msg.message_id = 1
     msg.answer = AsyncMock()
     msg.reply_photo = AsyncMock()
