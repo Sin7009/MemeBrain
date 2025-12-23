@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # PostgreSQL База данных
+  postgres:
+    image: postgres:15-alpine
+    container_name: memebrain_db
+    environment:
+      POSTGRES_DB: memebrain
+      POSTGRES_USER: memebrain
+      POSTGRES_PASSWORD: memebrain_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - memebrain_network
+    restart: unless-stopped
+
+  # Prometheus для сбора метрик
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: memebrain_prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - memebrain_network
+    restart: unless-stopped
+
+  # Grafana для визуализации метрик
+  grafana:
+    image: grafana/grafana:latest
+    container_name: memebrain_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - memebrain_network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  memebrain_network:
+    driver: bridge
