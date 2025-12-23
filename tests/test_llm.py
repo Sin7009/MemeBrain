@@ -49,3 +49,25 @@ def test_generate_meme_idea_bad_json(brain):
 
     result = brain.generate_meme_idea(["Hi"], "Hi")
     assert result is None
+
+def test_generate_meme_idea_with_template_query(brain):
+    """Test that template_query field is normalized to search_query"""
+    mock_response = MagicMock()
+    # OpenRouter может вернуть template_query вместо search_query
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content='{"is_memable": true, "top_text": "TOP", "bottom_text": "BOTTOM", "template_query": "QUERY"}'))
+    ]
+
+    brain.client = MagicMock()
+    brain.client.chat.completions.create.return_value = mock_response
+
+    context = ["User: Hi"]
+    trigger = "Hi"
+    result = brain.generate_meme_idea(context, trigger)
+
+    assert result is not None
+    assert result['top_text'] == "TOP"
+    assert result['bottom_text'] == "BOTTOM"
+    # Проверяем, что template_query был нормализован в search_query
+    assert result['search_query'] == "QUERY"
+    assert 'template_query' in result  # Оригинальное поле также должно остаться
