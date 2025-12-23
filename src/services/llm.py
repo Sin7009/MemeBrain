@@ -86,6 +86,10 @@ class MemeBrain:
             
             # Validate required fields
             if result and result.get("is_memable"):
+                # Нормализация: OpenRouter может вернуть template_query вместо search_query
+                if "template_query" in result and "search_query" not in result:
+                    result["search_query"] = result["template_query"]
+                
                 required_fields = ["top_text", "bottom_text", "search_query"]
                 if all(field in result for field in required_fields):
                     return result
