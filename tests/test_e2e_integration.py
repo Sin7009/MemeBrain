@@ -511,7 +511,7 @@ class TestE2ERealWorldScenarios:
             reaction = create_reaction(emoji="🎉", chat_id=chat_id, message_id=0)
             await reaction_handler(reaction)
             
-            # Проверяем успешную генерацию празднично мема
+            # Проверяем успешную генерацию праздничного мема
             reaction.bot.send_photo.assert_called_once()
 
 
