@@ -1,70 +1,59 @@
-# Code Quality & Security Audit Report
+# Code Quality & Audit Report
 
-## Summary
-This audit identifies areas of technical debt, "ghost code" (unused/commented logic), documentation gaps, and potential security improvements. The focus is on maintainability and hygiene without altering core business logic.
-
-## Findings
-
-### `src/services/face_swap.py`
-**Severity:** [MEDIUM]
-*   **Ghost Code:** The `FaceSwapper` class is effectively a placeholder. Core logic imports (`cv2`, `insightface`) and implementation are commented out to prevent `ImportError` in the MVP environment. The `swap_face` method acts as a pass-through.
-*   **TODO Archeology:**
-    *   `# --- ВАЖНО --- Комментируем все импорты...`
-    *   `# Тут будет логика инициализации InsightFace...`
-    *   `# Тут должна быть реальная логика InsightFace`
-*   **Action:** If face swapping is not planned for the immediate next release, remove the file or move it to a `prototypes/` directory to declutter the production codebase. Alternatively, implement a proper feature flag check that doesn't rely on commented-out imports.
+## 1. Ghost Code & Imports
 
 ### `src/bot/handlers.py`
-**Severity:** [MEDIUM]
-*   **Ghost Code:** `FaceSwapper` is imported and instantiated (`face_swapper = FaceSwapper()`), but its logic is skipped in the pipeline (`# 5. Face Swap (опционально)...`).
-*   **Ghost Code:** `FSInputFile` is imported but `aiogram.types` exposes it. `html` is used correctly.
-*   **Global State/Race Condition:** `TEMP_OUTPUT_FILE = "temp_meme.jpg"` is a global constant. In a concurrent environment (e.g., multiple users triggering memes simultaneously), this will cause file collisions and race conditions.
-*   **Hardcoded Configuration:** `MEME_TRIGGERS` list is hardcoded.
-*   **Error Handling:** Uses `print(...)` for error logging instead of the configured `logging` module.
-*   **TODO Archeology:**
-    *   `# !!! Важно: в Telegram API/aiogram...` (regarding getting message text)
-    *   `# NOTE: В реальном проекте FaceSwapper...`
-*   **Action:**
-    *   Remove unused `FaceSwapper` instantiation.
-    *   **CRITICAL:** Replace `TEMP_OUTPUT_FILE` with a unique filename generator (e.g., `tempfile` module or `uuid`) to prevent race conditions.
-    *   Move `MEME_TRIGGERS` to `src/services/config.py`.
-    *   Replace `print` with `logging.error`.
+*   **[LOW] Unused Variable:** `TEMP_OUTPUT_FILE` is defined but seemingly replaced by `unique_output_file`. The comment acknowledges this technical debt.
+    *   *Action:* Remove `TEMP_OUTPUT_FILE` if `unique_output_file` is fully verified.
+*   **[MEDIUM] Ghost Code:** `face_swapper = FaceSwapper()` is initialized but never used in any handler.
+    *   *Action:* Remove the initialization if Face Swap is not enabled.
 
-### `src/services/image_gen.py`
-**Severity:** [LOW]
-*   **Documentation:** `_wrap_text` function logic is complex; the inner functions `get_text_width` and `get_text_size` could be refactored into private helper methods for better readability.
-*   **Error Handling:** Uses `print(...)` for logging errors (e.g., network issues, image size limits).
-*   **Ghost Code:** `UnidentifiedImageError` is imported.
-*   **Action:** Replace `print` with `logging`. Extract inner functions in `_wrap_text` to class methods.
+### `src/services/face_swap.py`
+*   **[HIGH] Ghost Code:** The entire file is commented out code. The class `FaceSwapper` has no active methods.
+    *   *Action:* Delete the file or uncomment and fix if the feature is needed.
 
 ### `src/utils.py`
-**Severity:** [LOW]
-*   **Naming:** Variable `text` is shadowed/reused inside `safe_json_parse`.
-*   **Error Handling:** Uses `print(...)` for JSON parse errors.
-*   **Action:** Rename internal variable (e.g., `clean_text`). Replace `print` with `logging.warning`.
+*   **[LOW] Unused Function:** `clean_filename` is defined but does not appear to be used in `handlers.py` (which constructs filenames manually).
+    *   *Action:* Use `clean_filename` in `handlers.py` or remove it.
 
-### `src/services/search.py`
-**Severity:** [LOW]
-*   **Error Handling:** Uses `print(...)` for errors.
-*   **Action:** Replace `print` with `logging.error`.
+### `src/services/history.py`
+*   **[LOW] Unused Logic:** `get_message_text` returns `None` (or empty string in some versions) but `handlers.py` seems to rely on `get_context` mostly.
+    *   *Action:* Verify usage and unify return types (Optional[str] vs str).
 
-### `src/services/llm.py`
-**Severity:** [LOW]
-*   **Hardcoded Values:** Model name `"openai/gpt-4o-mini"` is hardcoded as a default in `config.py`, which is fine, but the fallback/usage in `llm.py` relies on `config.OPENROUTER_MODEL`.
-*   **Error Handling:** Uses `print(...)` for API errors.
-*   **Action:** Replace `print` with `logging.error`.
+## 2. Documentation & Naming
+
+### `src/bot/handlers.py`
+*   **[LOW] Naming:** Global variables `meme_brain`, `image_searcher` are instantiated at module level.
+    *   *Action:* Consider wrapping them in a dependency injection container or a `BotContext` class.
+*   **[LOW] Naming:** `reaction_handler` logic uses a complex lambda in the decorator.
+    *   *Action:* Extract the lambda to a named function `is_meme_trigger`.
+
+### `src/services/config.py`
+*   **[LOW] Hardcoded Values:** `OPENROUTER_MODEL` default is specific ("google/gemini-3-flash-preview").
+    *   *Action:* Ensure this defaults to a stable model alias if possible.
 
 ### `src/main.py`
-**Severity:** [LOW]
-*   **Logging:** Implicitly uses `print` via `logging` (which is configured to stdout). This is acceptable but could be more structured (JSON logs) for production.
-*   **Action:** None required for MVP, but consider structured logging later.
+*   **[LOW] Comments:** Mix of Russian and English comments.
+    *   *Action:* Standardize on English for code comments.
 
-## Security & Reliability Sanity Check
+## 3. TODO Archeology
 
-1.  **Race Condition (`src/bot/handlers.py`):** The use of a static `temp_meme.jpg` filename is a high-risk issue for a multi-user bot. **Refactor immediately** to use unique temporary filenames.
-2.  **API Keys:** No hardcoded keys found. All keys are correctly loaded from `src/services/config.py`.
-3.  **Input Sanitization:** `src/bot/handlers.py` uses `html.escape` before sending text to Telegram, preventing HTML injection. `src/services/image_gen.py` validates image size and content length.
-4.  **Error Leakage:** `src/services/search.py` actively sanitizes exception messages to avoid leaking API keys in logs. This is a good practice.
+*   **`src/bot/handlers.py`**: "But for preserving logic with TEMP_OUTPUT_FILE we will use it for now...".
+    *   *Action:* Refactor to remove dependency on `TEMP_OUTPUT_FILE` concept completely.
+*   **`src/services/face_swap.py`**: "ЗАГЛУШКА для сервиса Face Swap."
+    *   *Action:* Decide on the future of this feature (implement or delete).
+*   **`src/services/image_gen.py`**: "For newer Pillow versions, default size might be needed..."
+    *   *Action:* Verify Pillow version compatibility and remove speculative comment.
 
-## Conclusion
-The codebase is generally clean but exhibits typical "MVP shortcuts" like `print` debugging and placeholder logic for features not yet implemented (Face Swap). The most critical technical debt to address is the **file collision risk** in `src/bot/handlers.py`.
+## 4. Security Sanity Check
+
+### `src/services/search.py`
+*   **[MEDIUM] Hardcoded URL:** `https://api.tavily.com/search` is hardcoded.
+    *   *Action:* Move to `config.py` as `TAVILY_API_URL`.
+*   **[LOW] Error Logging:** Good practice observed (`Sentinel: Sanitize error logs`). Ensure this pattern is consistent across all external API calls (LLM, Telegram).
+
+### `src/bot/handlers.py`
+*   **[LOW] HTML Generation:** Uses `html.escape`, which is good. Ensure all user inputs (including `trigger_emoji`) are escaped if rendered.
+
+## Summary
+The codebase is relatively clean but has some "scaffolding" left from rapid development (Face Swap stub, temporary file naming). The primary focus should be cleaning up the `face_swap.py` ghost code and standardizing the configuration/instantiation of services.
