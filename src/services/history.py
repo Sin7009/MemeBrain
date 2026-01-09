@@ -1,9 +1,12 @@
 from collections import deque
 from typing import Deque, List, Tuple
 from aiogram.types import Message
+from datetime import datetime
+import logging
 
 # Размер истории берем из конфига
 from .config import config
+from .agent_memory import agent_memory
 
 class HistoryManager:
     """
@@ -15,6 +18,12 @@ class HistoryManager:
         # Словарь, где ключ - chat_id, значение - Deque[Tuple[message_id, user_id, text]]
         # Храним ID сообщения и пользователя
         self.history: dict[int, Deque[Tuple[int, int, str]]] = {}
+        self.memory_enabled = config.MEMORY_ENABLED
+        
+        # Загружаем историю из markdown файлов если включена память
+        if self.memory_enabled:
+            self._load_from_memory()
+            logging.info("HistoryManager: Загружена история из agent_memory")
 
     def add_message(self, message: Message):
         """Добавляет новое сообщение в историю чата."""
@@ -38,6 +47,11 @@ class HistoryManager:
 
         # Добавляем кортеж (ID сообщения, ID пользователя, текст)
         self.history[chat_id].append((message_id, user_id, text))
+        
+        # Сохраняем в markdown если включена память
+        if self.memory_enabled:
+            timestamp = datetime.fromtimestamp(message.date.timestamp()) if message.date else datetime.now()
+            agent_memory.save_message(chat_id, message_id, user_id, text, timestamp)
 
     def get_message_text(self, chat_id: int, message_id: int) -> str:
         """Возвращает текст конкретного сообщения по его ID."""
@@ -69,6 +83,32 @@ class HistoryManager:
             formatted_history.append(f"{user_display}: {text}")
             
         return formatted_history
+
+    def _load_from_memory(self):
+        """Загружает историю сообщений из markdown файлов при инициализации."""
+        try:
+            chat_ids = agent_memory.list_chats()
+            
+            for chat_id in chat_ids:
+                # Загружаем последние max_size сообщений для каждого чата
+                messages = agent_memory.load_chat_history(chat_id, limit=self.max_size)
+                
+                if messages:
+                    # Создаем deque и заполняем его
+                    self.history[chat_id] = deque(messages, maxlen=self.max_size)
+                    logging.info(f"HistoryManager: Загружено {len(messages)} сообщений для чата {chat_id}")
+        
+        except Exception as e:
+            logging.error(f"HistoryManager: Ошибка при загрузке истории из памяти: {e}")
+    
+    def get_memory_statistics(self):
+        """Возвращает статистику агентской памяти."""
+        if not self.memory_enabled:
+            return {"enabled": False}
+        
+        stats = agent_memory.get_statistics()
+        stats["enabled"] = True
+        return stats
 
 # Инициализируем синглтон-менеджер для всего приложения
 history_manager = HistoryManager()
