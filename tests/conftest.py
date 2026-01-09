@@ -7,6 +7,7 @@ from PIL import Image
 os.environ["TELEGRAM_BOT_TOKEN"] = "dummy_token"
 os.environ["TAVILY_API_KEY"] = "dummy_key"
 os.environ["OPENROUTER_API_KEY"] = "dummy_openrouter"
+os.environ["MEMORY_ENABLED"] = "False"  # Disable memory for tests
 # Clean up old vars if they interfere (though pydantic allows extra)
 if "GOOGLE_SEARCH_API_KEY" in os.environ:
     del os.environ["GOOGLE_SEARCH_API_KEY"]
@@ -19,6 +20,7 @@ def mock_settings_env():
     os.environ["TELEGRAM_BOT_TOKEN"] = "dummy_token"
     os.environ["TAVILY_API_KEY"] = "dummy_key"
     os.environ["OPENROUTER_API_KEY"] = "dummy_openrouter"
+    os.environ["MEMORY_ENABLED"] = "False"  # Disable memory for tests
 
 @pytest.fixture
 def mock_fonts():
