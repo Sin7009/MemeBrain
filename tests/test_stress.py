@@ -25,6 +25,7 @@ from src.services.image_gen import MemeGenerator
 
 def create_message(text="Hello", chat_id=123, user_id=456, chat_type='private', message_id=1):
     """Helper для создания мок-сообщений"""
+    from datetime import datetime
     msg = AsyncMock(spec=Message)
     msg.text = text
     msg.chat = AsyncMock(spec=Chat)
@@ -34,6 +35,7 @@ def create_message(text="Hello", chat_id=123, user_id=456, chat_type='private', 
     msg.from_user.id = user_id
     msg.from_user.first_name = "TestUser"
     msg.message_id = message_id
+    msg.date = datetime.now()
     msg.answer = AsyncMock()
     msg.reply_photo = AsyncMock()
     msg.bot = AsyncMock()
