@@ -212,5 +212,6 @@ memory/
 temp_meme*.jpg
 
 # Face Swap Models - large binary files
-models/
-*.onnx
+models/*.onnx
+# But keep the README
+!models/README.md
