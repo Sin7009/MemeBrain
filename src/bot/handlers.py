@@ -275,3 +275,61 @@ async def command_start_handler(message: Message):
         "Нажми /help для подробностей!"
     )
     await message.answer(welcome_text, parse_mode='HTML')
+
+
+# Команда для просмотра статистики памяти
+@router.message(Command("memory_stats"))
+async def command_memory_stats_handler(message: Message):
+    """Показывает статистику агентской памяти."""
+    stats = history_manager.get_memory_statistics()
+    
+    if not stats.get('enabled'):
+        await message.answer(
+            "📝 <b>Агентская память отключена</b>\n\n"
+            "Память не сохраняется между перезапусками.",
+            parse_mode='HTML'
+        )
+        return
+    
+    stats_text = (
+        f"📊 <b>Статистика агентской памяти</b>\n\n"
+        f"💬 <b>Чатов в памяти:</b> {stats.get('total_chats', 0)}\n"
+        f"📝 <b>Всего сообщений:</b> {stats.get('total_messages', 0)}\n"
+        f"🗂 <b>ID чатов:</b> {', '.join(map(str, stats.get('chat_ids', [])[:5]))}"
+    )
+    
+    if len(stats.get('chat_ids', [])) > 5:
+        stats_text += f"... (+{len(stats['chat_ids']) - 5} еще)"
+    
+    await message.answer(stats_text, parse_mode='HTML')
+
+
+# Команда для очистки истории текущего чата
+@router.message(Command("clear_memory"))
+async def command_clear_memory_handler(message: Message):
+    """Очищает историю текущего чата из памяти."""
+    chat_id = message.chat.id
+    
+    # Проверяем, есть ли что очищать
+    if chat_id not in history_manager.history or len(history_manager.history[chat_id]) == 0:
+        await message.answer(
+            "🤷‍♂️ <b>История пуста</b>\n\n"
+            "В этом чате нет сохраненных сообщений.",
+            parse_mode='HTML'
+        )
+        return
+    
+    # Очищаем in-memory историю
+    message_count = len(history_manager.history[chat_id])
+    history_manager.history[chat_id].clear()
+    
+    # Очищаем markdown файлы если память включена
+    if history_manager.memory_enabled:
+        from .services.agent_memory import agent_memory
+        agent_memory.clear_chat(chat_id)
+    
+    await message.answer(
+        f"🗑 <b>История очищена!</b>\n\n"
+        f"Удалено {message_count} сообщений из памяти этого чата.",
+        parse_mode='HTML'
+    )

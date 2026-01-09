@@ -6,5 +6,9 @@ pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
+
+# Face Swap (опционально) - для замены лиц на мемах
+# Раскомментируйте и установите если хотите использовать face_swap:
 # insightface==0.7.3
-# onnxruntime
+# onnxruntime>=1.15.0
+# opencv-python>=4.8.0

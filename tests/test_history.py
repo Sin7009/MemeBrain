@@ -1,5 +1,12 @@
 import unittest
+import os
 from unittest.mock import patch, MagicMock
+# Set env vars before importing
+os.environ["TELEGRAM_BOT_TOKEN"] = "dummy_token"
+os.environ["TAVILY_API_KEY"] = "dummy_key"
+os.environ["OPENROUTER_API_KEY"] = "dummy_openrouter"
+os.environ["MEMORY_ENABLED"] = "False"  # Disable memory for these tests
+
 from src.services.history import HistoryManager
 from aiogram.types import Message, Chat, User
 from datetime import datetime

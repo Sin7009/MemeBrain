@@ -23,5 +23,9 @@ class Settings(BaseSettings):
     
     # History
     HISTORY_SIZE: int = 10 # Сколько сообщений хранить
+    
+    # Agent Memory
+    MEMORY_DIR: str = "memory"  # Директория для хранения markdown файлов с историей
+    MEMORY_ENABLED: bool = True  # Включить сохранение истории в markdown
 
 config = Settings()
