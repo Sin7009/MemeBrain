@@ -210,3 +210,7 @@ __marimo__/
 memory/
 *.jpg
 temp_meme*.jpg
+
+# Face Swap Models - large binary files
+models/
+*.onnx
