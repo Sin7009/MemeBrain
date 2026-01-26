@@ -45,3 +45,26 @@ def test_search_template_error(searcher):
     with patch('requests.post', side_effect=requests.exceptions.RequestException("API Error")):
         url = searcher.search_template("crash")
         assert url is None
+
+def test_search_template_caching(searcher):
+    # Clear cache before test to ensure isolation
+    ImageSearcher._search_template_cached.cache_clear()
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "images": ["http://example.com/cached.jpg"],
+        "results": []
+    }
+    mock_response.raise_for_status.return_value = None
+
+    with patch('requests.post', return_value=mock_response) as mock_post:
+        # First call
+        url1 = searcher.search_template("repeat query")
+        assert url1 == "http://example.com/cached.jpg"
+
+        # Second call - should be cached
+        url2 = searcher.search_template("repeat query")
+        assert url2 == "http://example.com/cached.jpg"
+
+        # Verify network request happened only once
+        mock_post.assert_called_once()
