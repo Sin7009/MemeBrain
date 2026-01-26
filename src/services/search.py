@@ -1,5 +1,6 @@
 import requests
 from typing import Optional
+from functools import lru_cache
 from .config import config
 
 class ImageSearcher:
@@ -16,13 +17,21 @@ class ImageSearcher:
         """
         Ищет подходящий шаблон мема и возвращает URL первого результата.
         """
-        if self.mock_enabled:
+        return self._search_template_cached(query, self.api_key, self.mock_enabled, self.API_URL)
+
+    @staticmethod
+    @lru_cache(maxsize=128)
+    def _search_template_cached(query: str, api_key: str, mock_enabled: bool, api_url: str) -> Optional[str]:
+        """
+        Кешированная реализация поиска.
+        """
+        if mock_enabled:
             print(f"Search: Используется мок-режим для запроса '{query}'.")
             # Ссылка на простой шаблон для тестирования
             return "https://placehold.co/600x400.png" 
 
         payload = {
-            "api_key": self.api_key,
+            "api_key": api_key,
             "query": query,
             "search_depth": "basic",
             "include_images": True,
@@ -32,7 +41,7 @@ class ImageSearcher:
         }
 
         try:
-            response = requests.post(self.API_URL, json=payload, timeout=10)
+            response = requests.post(api_url, json=payload, timeout=10)
             response.raise_for_status()
             data = response.json()
 
