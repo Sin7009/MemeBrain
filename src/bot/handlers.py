@@ -75,7 +75,8 @@ async def generate_and_send_meme(
         logging.error(f"Не удалось отправить chat action: {e}")
 
     # 2. LLM: Генерация идеи мема
-    meme_idea = meme_brain.generate_meme_idea(context_messages, triggered_text, reaction_context)
+    # ⚡ Optimization: Run blocking LLM call in a thread to avoid blocking the event loop
+    meme_idea = await asyncio.to_thread(meme_brain.generate_meme_idea, context_messages, triggered_text, reaction_context)
 
     if not meme_idea:
         logging.error("❌ ОШИБКА: LLM вернула пустоту. Скорее всего, сломался JSON из-за мата или фильтров OpenAI.")
@@ -92,7 +93,8 @@ async def generate_and_send_meme(
     query = meme_idea['search_query']
 
     # 3. Search: Поиск шаблона
-    template_url = image_searcher.search_template(query + " meme template")
+    # ⚡ Optimization: Run blocking network request in a thread
+    template_url = await asyncio.to_thread(image_searcher.search_template, query + " meme template")
 
     if not template_url:
         await bot_instance.send_message(
@@ -110,7 +112,9 @@ async def generate_and_send_meme(
     # Лучше сделать уникальным.
     unique_output_file = f"temp_meme_{chat_id}_{reply_to_message_id}.jpg"
     
-    final_image_path = meme_generator.create_meme(
+    # ⚡ Optimization: Run heavy image processing and download in a thread
+    final_image_path = await asyncio.to_thread(
+        meme_generator.create_meme,
         image_url=template_url,
         top_text=meme_idea['top_text'],
         bottom_text=meme_idea['bottom_text'],
