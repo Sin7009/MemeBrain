@@ -13,3 +13,7 @@
 ## 2024-12-13 - [Async Wrapper for Blocking Sync Calls]
 **Learning:** Legacy synchronous code (requests, Pillow) inside async handlers blocks the entire event loop, causing severe latency under concurrent load.
 **Action:** Use `await asyncio.to_thread(func, *args)` to offload these blocking calls to a thread pool. This simple change provided a ~3x speedup in concurrent request handling.
+
+## 2026-01-28 - [Optimizing Image Decoding]
+**Learning:** `Image.open(io.BytesIO(data)).convert("RGB")` is significantly slower (~30x) than `image.copy()`. Decoding compressed image formats (JPEG/PNG) is CPU intensive.
+**Action:** Cache the *decoded* `PIL.Image` object (using a small `maxsize` to save RAM) and return a `.copy()` for consumers. This trades a small amount of memory for massive CPU savings in hot paths.
