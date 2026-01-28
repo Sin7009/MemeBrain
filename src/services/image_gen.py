@@ -11,15 +11,8 @@ class MemeGenerator:
     """
     def __init__(self, font_path: str = "arial.ttf"):
         # Если 'arial.ttf' недоступен, Pillow использует стандартный шрифт
-        try:
-            self.font_path = font_path
-            # For newer Pillow versions, default size might be needed or handled differently, 
-            # but initializing with 40 is a start. We resize later.
-            self.base_font = ImageFont.truetype(self.font_path, 40)
-        except IOError:
-            print("Внимание: Стандартный шрифт не найден. Используется дефолтный шрифт PIL.")
-            self.font_path = None
-            self.base_font = ImageFont.load_default()
+        self.font_path = font_path
+        # ⚡ Optimization: Removed self.base_font as it was unused and re-initialized every time in create_meme
 
     @staticmethod
     @lru_cache(maxsize=128)
@@ -53,16 +46,31 @@ class MemeGenerator:
              print("Ошибка парсинга Content-Length")
              return None
 
-    def _download_image(self, url: str) -> Optional[Image.Image]:
-        """Скачивает изображение по URL и возвращает объект PIL Image."""
-        image_bytes = self._download_image_bytes(url)
+    @staticmethod
+    @lru_cache(maxsize=16)
+    def _get_cached_image_object(url: str) -> Optional[Image.Image]:
+        """
+        Retrieves a decoded PIL Image object from cache.
+        Using a smaller cache size (16) because decoded images consume significant memory.
+        """
+        image_bytes = MemeGenerator._download_image_bytes(url)
         if not image_bytes:
             return None
         try:
+            # ⚡ Optimized: Return the object directly to the cache.
+            # Callers MUST use .copy() if they intend to modify it.
             return Image.open(io.BytesIO(image_bytes)).convert("RGB")
         except (UnidentifiedImageError, Exception) as e:
             print(f"Ошибка при открытии изображения: {e}")
             return None
+
+    def _download_image(self, url: str) -> Optional[Image.Image]:
+        """Скачивает изображение по URL и возвращает объект PIL Image."""
+        # ⚡ Optimized: Use cached decoded image and return a copy to avoid repeated decoding overhead.
+        img = self._get_cached_image_object(url)
+        if img:
+            return img.copy()
+        return None
 
     def _draw_text_with_shadow(self, draw: ImageDraw.Draw, text: str, pos: tuple[int, int], font: ImageFont.ImageFont):
         """Рисует текст с черным контуром/тенью (классический мем-стиль)."""
@@ -121,6 +129,17 @@ class MemeGenerator:
                  
         return lines
 
+    @staticmethod
+    @lru_cache(maxsize=128)
+    def _get_font(font_path: Optional[str], size: int) -> ImageFont.ImageFont:
+        """Loads and caches the font object to avoid disk I/O and parsing overhead."""
+        if font_path:
+            try:
+                return ImageFont.truetype(font_path, size)
+            except Exception:
+                pass
+        return ImageFont.load_default()
+
     def create_meme(self, image_url: str, top_text: str, bottom_text: str, output_path: str) -> Optional[str]:
         """Основная функция для создания мема."""
         img = self._download_image(image_url)
@@ -137,15 +156,8 @@ class MemeGenerator:
 
         font_size = max(int(width / 20), 20)
         
-        font = None
-        if self.font_path:
-             try:
-                 font = ImageFont.truetype(self.font_path, font_size)
-             except Exception:
-                 pass
-        
-        if font is None:
-             font = ImageFont.load_default()
+        # ⚡ Optimized: Use cached font loader
+        font = self._get_font(self.font_path, font_size)
         
         draw = ImageDraw.Draw(img)
 

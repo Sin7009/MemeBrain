@@ -44,7 +44,7 @@ class TestDestructiveMemeGenerator:
 
         # We mock _download_image_bytes to return this content
         # Note: We must NOT mock _download_image because we want to test its error handling logic
-        with patch.object(generator, '_download_image_bytes', return_value=fake_content):
+        with patch.object(MemeGenerator, '_download_image_bytes', return_value=fake_content):
             result = generator.create_meme(
                 image_url="http://example.com/not_an_image.html",
                 top_text="TEXT",
