@@ -17,3 +17,7 @@
 ## 2026-01-28 - [Optimizing Image Decoding]
 **Learning:** `Image.open(io.BytesIO(data)).convert("RGB")` is significantly slower (~30x) than `image.copy()`. Decoding compressed image formats (JPEG/PNG) is CPU intensive.
 **Action:** Cache the *decoded* `PIL.Image` object (using a small `maxsize` to save RAM) and return a `.copy()` for consumers. This trades a small amount of memory for massive CPU savings in hot paths.
+
+## 2026-02-05 - [Text Wrapping Heuristics]
+**Learning:** `textwrap.wrap` logic based on average character width can fail drastically for uppercase text if the multiplier is too aggressive (e.g. 1.5). This triggers an expensive O(N) fallback loop to correct line widths.
+**Action:** Tune the initial width heuristic (multiplier 1.0) to be conservative for the specific content type (uppercase memes). This avoids the fallback loop entirely for typical inputs, yielding a ~6x speedup.
