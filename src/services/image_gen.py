@@ -89,14 +89,9 @@ class MemeGenerator:
         """Оборачивает текст, чтобы он умещался по ширине изображения."""
         lines = []
         
-        # Calculate roughly characters that fit.
-        # We need a way to measure text width.
-        def get_text_width(t, f):
-            if hasattr(f, 'getlength'):
-                return f.getlength(t)
-            return f.getsize(t)[0]
-
-        avg_char_width = get_text_width("A", font)
+        # ⚡ Optimization: Use font.getlength directly (available in Pillow >= 9.2)
+        # Avoid repeated hasattr checks and inner function definition
+        avg_char_width = font.getlength("A")
         max_chars_per_line = int(max_width // avg_char_width) if avg_char_width > 0 else 1
         
         # Ensure max_chars_per_line is at least 1 to avoid textwrap.wrap(width=0) error
@@ -109,21 +104,34 @@ class MemeGenerator:
         wrap_width = max(1, int(max_chars_per_line * 1.5))
         wrapped_lines = textwrap.wrap(text, width=wrap_width, break_long_words=False)
         
-        # Дополнительная проверка на ширину
+        # Pre-calculate constants
+        space_width = font.getlength(" ")
+        limit_width = max_width * 0.95
+
         for line in wrapped_lines:
-             if get_text_width(line, font) > max_width * 0.95:
-                # Если строка все равно слишком длинная, ищем точку разрыва
-                temp_line = ""
+             if font.getlength(line) > limit_width:
+                # Optimized manual wrapping to avoid O(N^2) re-measurement
                 words = line.split()
-                for word in words:
-                    test_line = temp_line + " " + word if temp_line else word
-                    if get_text_width(test_line, font) < max_width * 0.95:
-                        temp_line = test_line
+                if not words:
+                    continue
+
+                current_line = words[0]
+                current_width = font.getlength(current_line)
+
+                for word in words[1:]:
+                    word_width = font.getlength(word)
+                    # Check if adding space + word fits
+                    # Approximate: width(A + " " + B) ~ width(A) + width(" ") + width(B)
+                    if current_width + space_width + word_width < limit_width:
+                        current_line += " " + word
+                        current_width += space_width + word_width
                     else:
-                        lines.append(temp_line)
-                        temp_line = word
-                if temp_line:
-                    lines.append(temp_line)
+                        lines.append(current_line)
+                        current_line = word
+                        current_width = word_width
+
+                if current_line:
+                    lines.append(current_line)
              else:
                  lines.append(line)
                  
@@ -161,20 +169,12 @@ class MemeGenerator:
         
         draw = ImageDraw.Draw(img)
 
-        # Helper to get size
-        def get_text_size(t, f):
-            if hasattr(f, 'getbbox'):
-                bbox = f.getbbox(t)
-                if bbox:
-                    return bbox[2] - bbox[0], bbox[3] - bbox[1]
-                return 0, 0
-            return f.getsize(t)
-
         # 1. Верхний текст
         top_lines = self._wrap_text(top_text.upper(), width, font)
         top_y = 0
         for line in top_lines:
-            text_width, text_height = get_text_size(line, font)
+            bbox = font.getbbox(line)
+            text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
             x = (width - text_width) / 2
             self._draw_text_with_shadow(draw, line, (int(x), int(top_y)), font)
             top_y += text_height * 1.1 # Смещение для следующей строки
@@ -182,11 +182,16 @@ class MemeGenerator:
         # 2. Нижний текст
         bottom_lines = self._wrap_text(bottom_text.upper(), width, font)
         # Вычисляем начальную позицию для нижнего текста
-        total_bottom_height = sum(get_text_size(line, font)[1] * 1.1 for line in bottom_lines)
+        total_bottom_height = 0
+        for line in bottom_lines:
+             bbox = font.getbbox(line)
+             total_bottom_height += (bbox[3] - bbox[1]) * 1.1
+
         bottom_y = height - total_bottom_height
 
         for line in bottom_lines:
-            text_width, text_height = get_text_size(line, font)
+            bbox = font.getbbox(line)
+            text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
             x = (width - text_width) / 2
             self._draw_text_with_shadow(draw, line, (int(x), int(bottom_y)), font)
             bottom_y += text_height * 1.1
