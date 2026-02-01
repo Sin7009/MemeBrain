@@ -2,6 +2,7 @@ import requests
 from typing import Optional
 from functools import lru_cache
 from .config import config
+from .http_client import http_session
 
 class ImageSearcher:
     """
@@ -41,7 +42,7 @@ class ImageSearcher:
         }
 
         try:
-            response = requests.post(api_url, json=payload, timeout=10)
+            response = http_session.post(api_url, json=payload, timeout=10)
             response.raise_for_status()
             data = response.json()
 

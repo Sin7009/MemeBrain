@@ -17,3 +17,7 @@
 ## 2026-01-28 - [Optimizing Image Decoding]
 **Learning:** `Image.open(io.BytesIO(data)).convert("RGB")` is significantly slower (~30x) than `image.copy()`. Decoding compressed image formats (JPEG/PNG) is CPU intensive.
 **Action:** Cache the *decoded* `PIL.Image` object (using a small `maxsize` to save RAM) and return a `.copy()` for consumers. This trades a small amount of memory for massive CPU savings in hot paths.
+
+## 2026-02-05 - [HTTP Connection Pooling]
+**Learning:** `requests.get()` creates a new connection for every call, incurring repeated SSL handshake overhead (~50-100ms) when accessing the same API repeatedly.
+**Action:** Use a global `requests.Session` object with `requests.adapters.HTTPAdapter` to enable connection pooling and Keep-Alive. This measurably reduces latency for repeated API calls (like Search or Image downloads from same host).
