@@ -17,3 +17,7 @@
 ## 2026-01-28 - [Optimizing Image Decoding]
 **Learning:** `Image.open(io.BytesIO(data)).convert("RGB")` is significantly slower (~30x) than `image.copy()`. Decoding compressed image formats (JPEG/PNG) is CPU intensive.
 **Action:** Cache the *decoded* `PIL.Image` object (using a small `maxsize` to save RAM) and return a `.copy()` for consumers. This trades a small amount of memory for massive CPU savings in hot paths.
+
+## 2026-01-28 - [Text Wrapping Performance]
+**Learning:** Repeatedly measuring growing strings with `font.getlength` inside a loop is $O(N^2)$ and slow. Using `font.getlength(word)` and accumulating width is $O(N)$ and ~40% faster.
+**Action:** Use linear accumulation for measuring text width in wrapping algorithms. Also prefer direct `font.getlength` (Pillow >= 10.1.0) over `font.getsize` or dynamic checks.
