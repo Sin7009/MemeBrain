@@ -25,7 +25,7 @@ def test_download_image_bytes_success(generator):
     mock_get.__enter__.return_value = mock_response
     mock_get.__exit__.return_value = None
 
-    with patch('requests.get', return_value=mock_get):
+    with patch('src.services.image_gen.http_session.get', return_value=mock_get):
         # Clear cache
         generator._download_image_bytes.cache_clear()
 
@@ -43,7 +43,7 @@ def test_download_image_too_large(generator):
     mock_get.__enter__.return_value = mock_response
     mock_get.__exit__.return_value = None
 
-    with patch('requests.get', return_value=mock_get):
+    with patch('src.services.image_gen.http_session.get', return_value=mock_get):
         generator._download_image_bytes.cache_clear()
         data = generator._download_image_bytes("http://example.com/big.jpg")
         assert data is None

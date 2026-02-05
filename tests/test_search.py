@@ -23,7 +23,7 @@ def test_search_template_success(searcher):
     }
     mock_response.raise_for_status.return_value = None
 
-    with patch('requests.post', return_value=mock_response) as mock_post:
+    with patch('src.services.search.http_session.post', return_value=mock_response) as mock_post:
         url = searcher.search_template("funny cat")
         assert url == "http://example.com/meme.jpg"
         mock_post.assert_called_once()
@@ -36,13 +36,13 @@ def test_search_template_no_results(searcher):
     mock_response = MagicMock()
     mock_response.json.return_value = {"images": []}
 
-    with patch('requests.post', return_value=mock_response):
+    with patch('src.services.search.http_session.post', return_value=mock_response):
         url = searcher.search_template("ghost")
         assert url is None
 
 def test_search_template_error(searcher):
     # This simulates a request exception which is caught and logged
-    with patch('requests.post', side_effect=requests.exceptions.RequestException("API Error")):
+    with patch('src.services.search.http_session.post', side_effect=requests.exceptions.RequestException("API Error")):
         url = searcher.search_template("crash")
         assert url is None
 
@@ -57,7 +57,7 @@ def test_search_template_caching(searcher):
     }
     mock_response.raise_for_status.return_value = None
 
-    with patch('requests.post', return_value=mock_response) as mock_post:
+    with patch('src.services.search.http_session.post', return_value=mock_response) as mock_post:
         # First call
         url1 = searcher.search_template("repeat query")
         assert url1 == "http://example.com/cached.jpg"

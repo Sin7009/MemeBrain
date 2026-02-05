@@ -4,6 +4,7 @@ import io
 import textwrap
 from typing import List, Optional
 from functools import lru_cache
+from .http_client import http_session
 
 class MemeGenerator:
     """
@@ -20,7 +21,7 @@ class MemeGenerator:
         """Скачивает изображение по URL и возвращает байты. Кешируется."""
         MAX_SIZE = 5 * 1024 * 1024  # 5 MB limit
         try:
-            with requests.get(url, stream=True, timeout=10) as response:
+            with http_session.get(url, stream=True, timeout=10) as response:
                 response.raise_for_status()
 
                 # Check Content-Length if present
