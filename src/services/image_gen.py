@@ -85,18 +85,19 @@ class MemeGenerator:
             stroke_fill=(0, 0, 0)
         )
 
+    @staticmethod
+    def _get_text_width(text: str, font: ImageFont.ImageFont) -> int:
+        """Optimized helper to get text width."""
+        if hasattr(font, 'getlength'):
+            return font.getlength(text)
+        return font.getsize(text)[0]
+
     def _wrap_text(self, text: str, max_width: int, font: ImageFont.ImageFont) -> List[str]:
         """Оборачивает текст, чтобы он умещался по ширине изображения."""
         lines = []
         
         # Calculate roughly characters that fit.
-        # We need a way to measure text width.
-        def get_text_width(t, f):
-            if hasattr(f, 'getlength'):
-                return f.getlength(t)
-            return f.getsize(t)[0]
-
-        avg_char_width = get_text_width("A", font)
+        avg_char_width = self._get_text_width("A", font)
         max_chars_per_line = int(max_width // avg_char_width) if avg_char_width > 0 else 1
         
         # Ensure max_chars_per_line is at least 1 to avoid textwrap.wrap(width=0) error
@@ -110,20 +111,33 @@ class MemeGenerator:
         wrapped_lines = textwrap.wrap(text, width=wrap_width, break_long_words=False)
         
         # Дополнительная проверка на ширину
+        space_width = self._get_text_width(" ", font)
+
         for line in wrapped_lines:
-             if get_text_width(line, font) > max_width * 0.95:
-                # Если строка все равно слишком длинная, ищем точку разрыва
-                temp_line = ""
+             if self._get_text_width(line, font) > max_width * 0.95:
+                # ⚡ Optimized: Linear accumulation O(N) instead of O(N^2)
                 words = line.split()
+                current_line_words = []
+                current_width = 0
+
                 for word in words:
-                    test_line = temp_line + " " + word if temp_line else word
-                    if get_text_width(test_line, font) < max_width * 0.95:
-                        temp_line = test_line
+                    word_width = self._get_text_width(word, font)
+                    # Add space width if not the first word in the line
+                    added_width = word_width + (space_width if current_line_words else 0)
+
+                    if current_width + added_width <= max_width * 0.95:
+                        current_line_words.append(word)
+                        current_width += added_width
                     else:
-                        lines.append(temp_line)
-                        temp_line = word
-                if temp_line:
-                    lines.append(temp_line)
+                        # Flush current line
+                        if current_line_words:
+                            lines.append(" ".join(current_line_words))
+                        # Start new line with current word
+                        current_line_words = [word]
+                        current_width = word_width
+
+                if current_line_words:
+                    lines.append(" ".join(current_line_words))
              else:
                  lines.append(line)
                  
