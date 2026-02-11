@@ -5,41 +5,52 @@ from src.services.config import config
 
 @pytest.fixture
 def brain():
-    # Patch the config directly where it is used or instantiated
-    # Since MemeBrain uses `config.LLM_MOCK_ENABLED` in __init__, we need to patch it before init
-    # OR since we already have an instance, we can modify the instance attribute `mock_enabled`
     with patch.object(config, 'LLM_MOCK_ENABLED', False):
         brain_instance = MemeBrain()
-        # Force instance mock_enabled to False just in case
         brain_instance.mock_enabled = False
         yield brain_instance
 
-def test_generate_meme_idea_success(brain):
+def test_decide_content_meme(brain):
     mock_response = MagicMock()
     mock_response.choices = [
-        MagicMock(message=MagicMock(content='```json\n{"is_memable": true, "top_text": "TOP", "bottom_text": "BOTTOM", "search_query": "QUERY"}\n```'))
+        MagicMock(message=MagicMock(content='```json\n{"action": "generate_meme", "search_query": "funny cat", "top_text": "TOP", "bottom_text": "BOTTOM"}\n```'))
     ]
 
-    # Patch the OpenAI client create method
     brain.client = MagicMock()
     brain.client.chat.completions.create.return_value = mock_response
 
     context = ["User: Hi"]
     trigger = "Hi"
-    result = brain.generate_meme_idea(context, trigger)
+    result = brain.decide_content(context, trigger)
 
     assert result is not None
+    assert result['action'] == "generate_meme"
     assert result['top_text'] == "TOP"
     assert result['bottom_text'] == "BOTTOM"
 
-def test_generate_meme_idea_api_error(brain):
+def test_decide_content_gif(brain):
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content='{"action": "search_gif", "search_query": "facepalm"}'))
+    ]
+
+    brain.client = MagicMock()
+    brain.client.chat.completions.create.return_value = mock_response
+
+    result = brain.decide_content(["Hi"], "Hi")
+
+    assert result is not None
+    assert result['action'] == "search_gif"
+    assert result['search_query'] == "facepalm"
+
+def test_decide_content_api_error(brain):
     brain.client = MagicMock()
     brain.client.chat.completions.create.side_effect = Exception("API Fail")
 
-    result = brain.generate_meme_idea(["Hi"], "Hi")
+    result = brain.decide_content(["Hi"], "Hi")
     assert result is None
 
-def test_generate_meme_idea_bad_json(brain):
+def test_decide_content_bad_json(brain):
     mock_response = MagicMock()
     mock_response.choices = [
         MagicMock(message=MagicMock(content='Not JSON'))
@@ -47,27 +58,22 @@ def test_generate_meme_idea_bad_json(brain):
     brain.client = MagicMock()
     brain.client.chat.completions.create.return_value = mock_response
 
-    result = brain.generate_meme_idea(["Hi"], "Hi")
+    result = brain.decide_content(["Hi"], "Hi")
     assert result is None
 
-def test_generate_meme_idea_with_template_query(brain):
-    """Test that template_query field is normalized to search_query"""
+def test_decide_content_missing_search_query_recovery(brain):
+    """Test that missing search_query is recovered from reasoning"""
     mock_response = MagicMock()
-    # OpenRouter может вернуть template_query вместо search_query
+    # OpenRouter forgot search_query but provided reasoning
     mock_response.choices = [
-        MagicMock(message=MagicMock(content='{"is_memable": true, "top_text": "TOP", "bottom_text": "BOTTOM", "template_query": "QUERY"}'))
+        MagicMock(message=MagicMock(content='{"action": "search_image", "reasoning": "cute puppy"}'))
     ]
 
     brain.client = MagicMock()
     brain.client.chat.completions.create.return_value = mock_response
 
-    context = ["User: Hi"]
-    trigger = "Hi"
-    result = brain.generate_meme_idea(context, trigger)
+    result = brain.decide_content(["User: Hi"], "Hi")
 
     assert result is not None
-    assert result['top_text'] == "TOP"
-    assert result['bottom_text'] == "BOTTOM"
-    # Проверяем, что template_query был нормализован в search_query
-    assert result['search_query'] == "QUERY"
-    assert 'template_query' in result  # Оригинальное поле также должно остаться
+    assert result['action'] == "search_image"
+    assert result['search_query'] == "cute puppy" # Recovered from reasoning

@@ -2,6 +2,7 @@ import os
 import asyncio
 from src.services.llm import MemeBrain
 from src.services.image_gen import MemeGenerator
+from src.services.search import ContentSearcher
 from src.services.config import config
 from dotenv import load_dotenv
 
@@ -29,18 +30,18 @@ async def test_full_pipeline_mock():
     
     # 1. LLM Mock: Получение идеи
     meme_brain = MemeBrain()
-    meme_idea = meme_brain.generate_meme_idea(MOCK_CONTEXT, MOCK_TRIGGER_TEXT)
+    decision = meme_brain.decide_content(MOCK_CONTEXT, MOCK_TRIGGER_TEXT)
     
-    if not meme_idea:
-        print("Тест LLM: Провал. Идея не сгенерирована.")
+    if not decision:
+        print("Тест LLM: Провал. Решение не принято.")
         return
 
-    print(f"Тест LLM: Успех. Идея: {meme_idea['top_text']} / {meme_idea['bottom_text']}")
+    print(f"Тест LLM: Успех. Решение: {decision['action']}")
     
     # 2. Search Mock: Получение URL шаблона (используется mock URL)
-    from src.services.search import ImageSearcher
-    image_searcher = ImageSearcher()
-    template_url = image_searcher.search_template(meme_idea['search_query'])
+    content_searcher = ContentSearcher()
+    # Assuming action is generate_meme for this test case
+    template_url = content_searcher.search_image(decision['search_query'])
     
     if not template_url:
         print("Тест Search: Провал. URL не получен.")
@@ -52,8 +53,8 @@ async def test_full_pipeline_mock():
     meme_generator = MemeGenerator()
     final_path = meme_generator.create_meme(
         image_url=template_url,
-        top_text=meme_idea['top_text'],
-        bottom_text=meme_idea['bottom_text'],
+        top_text=decision.get('top_text', 'TOP'),
+        bottom_text=decision.get('bottom_text', 'BOTTOM'),
         output_path=TEST_OUTPUT_FILE
     )
     

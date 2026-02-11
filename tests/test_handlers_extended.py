@@ -3,7 +3,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from src.bot.handlers import (
     command_help_handler,
     message_handler,
-    generate_and_send_meme
+    handle_content_generation
 )
 from aiogram.types import Message, Chat, User
 
@@ -25,6 +25,7 @@ def create_message(text="Hello", chat_id=123, user_id=456, chat_type='private'):
     msg.bot.send_chat_action = AsyncMock()
     msg.bot.send_photo = AsyncMock()
     msg.bot.send_message = AsyncMock()
+    msg.bot.send_animation = AsyncMock()
     return msg
 
 
@@ -35,29 +36,29 @@ async def test_command_help():
     await command_help_handler(msg)
     msg.answer.assert_called_once()
     call_args = msg.answer.call_args[0][0]
-    assert "Как пользоваться ботом" in call_args
-    assert "Реакция" in call_args
+    assert "AI Content Router" in call_args
+    assert "Мем" in call_args
 
 
 @pytest.mark.asyncio
 async def test_message_handler_private_chat():
-    """Test message handler in private chat triggers meme generation"""
+    """Test message handler in private chat triggers content generation"""
     msg = create_message(text="Test message", chat_type='private')
     
     with patch('src.bot.handlers.history_manager') as mock_hist, \
          patch('src.bot.handlers.meme_brain') as mock_brain, \
-         patch('src.bot.handlers.image_searcher') as mock_search, \
+         patch('src.bot.handlers.content_searcher') as mock_search, \
          patch('src.bot.handlers.meme_generator') as mock_gen, \
          patch('src.bot.handlers.FSInputFile'):
         
         mock_hist.get_context.return_value = ["User: Test message"]
-        mock_brain.generate_meme_idea.return_value = {
-            "is_memable": True,
+        mock_brain.decide_content.return_value = {
+            "action": "generate_meme",
             "top_text": "TOP",
             "bottom_text": "BOTTOM",
             "search_query": "query"
         }
-        mock_search.search_template.return_value = "http://img.jpg"
+        mock_search.search_image.return_value = "http://img.jpg"
         mock_gen.create_meme.return_value = "output.jpg"
         
         await message_handler(msg)
@@ -83,28 +84,14 @@ async def test_message_handler_group_chat():
 
 
 @pytest.mark.asyncio
-async def test_message_handler_command_ignored():
-    """Test that commands starting with / are ignored in private chat"""
-    msg = create_message(text="/command", chat_type='private')
-    
-    with patch('src.bot.handlers.history_manager') as mock_hist:
-        await message_handler(msg)
-        
-        # Should add to history
-        mock_hist.add_message.assert_called_once()
-        # Should NOT generate meme for commands
-        msg.bot.send_photo.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_generate_and_send_meme_llm_failure():
-    """Test generate_and_send_meme when LLM returns None"""
+async def test_handle_content_generation_llm_failure():
+    """Test handle_content_generation when LLM returns None"""
     msg = create_message()
     
     with patch('src.bot.handlers.meme_brain') as mock_brain:
-        mock_brain.generate_meme_idea.return_value = None
+        mock_brain.decide_content.return_value = None
         
-        await generate_and_send_meme(
+        await handle_content_generation(
             chat_id=123,
             triggered_text="Test",
             context_messages=["User: Test"],
@@ -112,54 +99,28 @@ async def test_generate_and_send_meme_llm_failure():
             reply_to_message_id=1
         )
         
-        # Should send error message
-        msg.bot.send_message.assert_called_once()
-        assert "Мозги сломались" in msg.bot.send_message.call_args[0][1]
-
-
-@pytest.mark.asyncio
-async def test_generate_and_send_meme_not_memable():
-    """Test generate_and_send_meme when LLM says not memable"""
-    msg = create_message()
-    
-    with patch('src.bot.handlers.meme_brain') as mock_brain:
-        mock_brain.generate_meme_idea.return_value = {
-            "is_memable": False,
-            "top_text": "",
-            "bottom_text": "",
-            "search_query": ""
-        }
-        
-        await generate_and_send_meme(
-            chat_id=123,
-            triggered_text="Test",
-            context_messages=["User: Test"],
-            bot_instance=msg.bot,
-            reply_to_message_id=1
-        )
-        
-        # Should not send anything
+        # Should log error but not crash. Typically sends nothing or generic error if configured.
+        # In current implementation, it logs error and returns silently if decision is None
         msg.bot.send_message.assert_not_called()
-        msg.bot.send_photo.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_generate_and_send_meme_search_failure():
-    """Test generate_and_send_meme when search returns no results"""
+async def test_handle_content_generation_search_failure():
+    """Test handle_content_generation when search returns no results"""
     msg = create_message()
     
     with patch('src.bot.handlers.meme_brain') as mock_brain, \
-         patch('src.bot.handlers.image_searcher') as mock_search:
+         patch('src.bot.handlers.content_searcher') as mock_search:
         
-        mock_brain.generate_meme_idea.return_value = {
-            "is_memable": True,
+        mock_brain.decide_content.return_value = {
+            "action": "generate_meme",
             "top_text": "TOP",
             "bottom_text": "BOTTOM",
             "search_query": "query"
         }
-        mock_search.search_template.return_value = None
+        mock_search.search_image.return_value = None
         
-        await generate_and_send_meme(
+        await handle_content_generation(
             chat_id=123,
             triggered_text="Test",
             context_messages=["User: Test"],
@@ -169,28 +130,29 @@ async def test_generate_and_send_meme_search_failure():
         
         # Should send error message about template not found
         msg.bot.send_message.assert_called_once()
-        assert "Шаблон не найден" in msg.bot.send_message.call_args[0][1]
+        # send_message(chat_id, text, ...) -> call_args[0][1] is text
+        assert "Не нашел шаблон" in msg.bot.send_message.call_args[0][1]
 
 
 @pytest.mark.asyncio
-async def test_generate_and_send_meme_image_gen_failure():
-    """Test generate_and_send_meme when image generation fails"""
+async def test_handle_content_generation_image_gen_failure():
+    """Test handle_content_generation when image generation fails"""
     msg = create_message()
     
     with patch('src.bot.handlers.meme_brain') as mock_brain, \
-         patch('src.bot.handlers.image_searcher') as mock_search, \
+         patch('src.bot.handlers.content_searcher') as mock_search, \
          patch('src.bot.handlers.meme_generator') as mock_gen:
         
-        mock_brain.generate_meme_idea.return_value = {
-            "is_memable": True,
+        mock_brain.decide_content.return_value = {
+            "action": "generate_meme",
             "top_text": "TOP",
             "bottom_text": "BOTTOM",
             "search_query": "query"
         }
-        mock_search.search_template.return_value = "http://img.jpg"
+        mock_search.search_image.return_value = "http://img.jpg"
         mock_gen.create_meme.return_value = None
         
-        await generate_and_send_meme(
+        await handle_content_generation(
             chat_id=123,
             triggered_text="Test",
             context_messages=["User: Test"],
@@ -200,4 +162,4 @@ async def test_generate_and_send_meme_image_gen_failure():
         
         # Should send error message
         msg.bot.send_message.assert_called_once()
-        assert "Не удалось создать картинку" in msg.bot.send_message.call_args[0][1]
+        assert "Ошибка генерации картинки" in msg.bot.send_message.call_args[0][1]

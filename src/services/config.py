@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 class Settings(BaseSettings):
     """
@@ -18,9 +19,9 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str
     SEARCH_MOCK_ENABLED: bool = False
     
-    # Face Swap
-    FACE_SWAP_ENABLED: bool = False
-    
+    # Giphy
+    GIPHY_API_KEY: Optional[str] = None
+
     # History
     HISTORY_SIZE: int = 10 # Сколько сообщений хранить
     

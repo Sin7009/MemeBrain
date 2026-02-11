@@ -2,33 +2,53 @@ import requests
 from typing import Optional
 from functools import lru_cache
 from .config import config
+import urllib.parse
 
-class ImageSearcher:
+class ContentSearcher:
     """
-    Сервис поиска картинок через Tavily API.
+    Универсальный сервис поиска контента (Картинки, GIF, Видео).
     """
-    API_URL = "https://api.tavily.com/search"
+    TAVILY_API_URL = "https://api.tavily.com/search"
+    GIPHY_API_URL = "https://api.giphy.com/v1/gifs/search"
 
     def __init__(self):
-        self.api_key = config.TAVILY_API_KEY
+        self.tavily_api_key = config.TAVILY_API_KEY
+        self.giphy_api_key = config.GIPHY_API_KEY
         self.mock_enabled = config.SEARCH_MOCK_ENABLED
 
-    def search_template(self, query: str) -> Optional[str]:
+    def search_image(self, query: str) -> Optional[str]:
         """
-        Ищет подходящий шаблон мема и возвращает URL первого результата.
+        Ищет картинку через Tavily API.
         """
-        return self._search_template_cached(query, self.api_key, self.mock_enabled, self.API_URL)
+        return self._search_image_cached(query, self.tavily_api_key, self.mock_enabled, self.TAVILY_API_URL)
+
+    def search_gif(self, query: str) -> Optional[str]:
+        """
+        Ищет GIF через Giphy API.
+        """
+        if not self.giphy_api_key:
+            print("Search: GIPHY_API_KEY не установлен.")
+            return None
+
+        return self._search_gif_cached(query, self.giphy_api_key, self.mock_enabled, self.GIPHY_API_URL)
+
+    def search_video(self, query: str) -> str:
+        """
+        Генерирует ссылку на поиск YouTube.
+        TODO: В будущем реализовать скачивание через yt-dlp.
+        """
+        encoded_query = urllib.parse.quote(query)
+        return f"https://www.youtube.com/results?search_query={encoded_query}"
 
     @staticmethod
     @lru_cache(maxsize=128)
-    def _search_template_cached(query: str, api_key: str, mock_enabled: bool, api_url: str) -> Optional[str]:
+    def _search_image_cached(query: str, api_key: str, mock_enabled: bool, api_url: str) -> Optional[str]:
         """
-        Кешированная реализация поиска.
+        Кешированная реализация поиска картинок (Tavily).
         """
         if mock_enabled:
-            print(f"Search: Используется мок-режим для запроса '{query}'.")
-            # Ссылка на простой шаблон для тестирования
-            return "https://placehold.co/600x400.png" 
+            print(f"Search (Image): Mock mode for '{query}'.")
+            return "https://placehold.co/600x400.png"
 
         payload = {
             "api_key": api_key,
@@ -45,19 +65,49 @@ class ImageSearcher:
             response.raise_for_status()
             data = response.json()
 
-            # Tavily returns a list of image URLs in the 'images' field
             if 'images' in data and data['images']:
-                # Возвращаем прямую ссылку на изображение
-                # data['images'] is a list of strings (URLs)
                 return data['images'][0]
             
-            print(f"Search: Результаты для '{query}' не найдены.")
+            print(f"Search (Image): Ничего не найдено по запросу '{query}'.")
             return None
 
         except requests.exceptions.RequestException as e:
-            # 🛡️ Sentinel: Sanitize error logs to prevent API key leakage
-            status_code = getattr(e.response, 'status_code', 'N/A')
-            error_type = type(e).__name__
-            # Tavily keys are in the body, but good to be safe about URL params anyway
-            print(f"Search: Ошибка при запросе к Tavily API ({error_type}, Status: {status_code})")
+            print(f"Search (Image): Ошибка API ({e})")
+            return None
+
+    @staticmethod
+    @lru_cache(maxsize=128)
+    def _search_gif_cached(query: str, api_key: str, mock_enabled: bool, api_url: str) -> Optional[str]:
+        """
+        Кешированная реализация поиска GIF (Giphy).
+        """
+        if mock_enabled:
+            print(f"Search (GIF): Mock mode for '{query}'.")
+            return "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbXgxbWJ1ZWF1M3YxeHl5Z3lxYnZyeXJ6YnZyeXJ6YnZyeXJ6YnZyeXJ6JmN0PWc/3o7TKSjRrfIPjeiVyM/giphy.gif"
+
+        params = {
+            "api_key": api_key,
+            "q": query,
+            "limit": 1,
+            "offset": 0,
+            "rating": "pg-13",
+            "lang": "en",
+            "bundle": "messaging_non_clips"
+        }
+
+        try:
+            response = requests.get(api_url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get('data') and len(data['data']) > 0:
+                # Берем оригинальный MP4 или GIF
+                # Лучше использовать 'original' -> 'url'
+                return data['data'][0]['images']['original']['url']
+
+            print(f"Search (GIF): Ничего не найдено по запросу '{query}'.")
+            return None
+
+        except requests.exceptions.RequestException as e:
+            print(f"Search (GIF): Ошибка API ({e})")
             return None

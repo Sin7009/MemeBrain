@@ -1,12 +1,11 @@
 from aiogram import Router, F
-from aiogram.types import Message, MessageReactionUpdated, FSInputFile
+from aiogram.types import Message, MessageReactionUpdated, FSInputFile, URLInputFile
 from aiogram.filters import Command
 from aiogram import Bot
 from ..services.history import history_manager
 from ..services.llm import MemeBrain
-from ..services.search import ImageSearcher
+from ..services.search import ContentSearcher
 from ..services.image_gen import MemeGenerator
-from ..services.face_swap import FaceSwapper
 import os
 import html
 import asyncio
@@ -17,9 +16,8 @@ router = Router()
 
 # Инициализация всех сервисов
 meme_brain = MemeBrain()
-image_searcher = ImageSearcher()
+content_searcher = ContentSearcher()
 meme_generator = MemeGenerator()
-face_swapper = FaceSwapper()
 
 # Эмодзи, на которые реагируем, и их смысловое значение
 MEME_TRIGGERS = {
@@ -41,9 +39,8 @@ MEME_TRIGGERS = {
     "💩": "Дерьмо, очень плохо, ирония",
     "🤡": "Клоунада, глупость, ирония над автором"
 }
-TEMP_OUTPUT_FILE = "temp_meme.jpg"
 
-async def generate_and_send_meme(
+async def handle_content_generation(
     chat_id: int,
     triggered_text: str,
     context_messages: List[str],
@@ -53,19 +50,18 @@ async def generate_and_send_meme(
     trigger_emoji: Optional[str] = None
 ) -> None:
     """
-    Общая логика генерации и отправки мема.
+    Основной диспетчер генерации контента.
+    Решает, что отправить: Мем, Гифку, Картинку или Видео.
     """
     # Validate input
     if not bot_instance:
-        logging.error("bot_instance is required for generate_and_send_meme")
+        logging.error("bot_instance is required for handle_content_generation")
         return
     
     if not triggered_text or not triggered_text.strip():
-        logging.warning("Skipping meme generation: triggered_text is empty")
         return
     
     if not context_messages:
-        logging.warning("Skipping meme generation: context_messages is empty")
         return
     
     # 1. Показываем активность "печатает"
@@ -74,86 +70,137 @@ async def generate_and_send_meme(
     except Exception as e:
         logging.error(f"Не удалось отправить chat action: {e}")
 
-    # 2. LLM: Генерация идеи мема
-    # ⚡ Optimization: Run blocking LLM call in a thread to avoid blocking the event loop
-    meme_idea = await asyncio.to_thread(meme_brain.generate_meme_idea, context_messages, triggered_text, reaction_context)
+    # 2. LLM: Принятие решения
+    decision = await asyncio.to_thread(meme_brain.decide_content, context_messages, triggered_text, reaction_context)
 
-    if not meme_idea:
-        logging.error("❌ ОШИБКА: LLM вернула пустоту. Скорее всего, сломался JSON из-за мата или фильтров OpenAI.")
-        # Опционально: сказать юзеру, что бот сломался
-        await bot_instance.send_message(chat_id, "Мозги сломались, слишком сложно!", reply_to_message_id=reply_to_message_id)
+    if not decision:
+        logging.error("❌ ОШИБКА: LLM не вернула решение.")
+        # Fail silently or generic message
         return
 
-    if not meme_idea.get('is_memable'):
-        logging.warning("⚠️ ОТКАЗ: Нейросеть решила, что это не смешно (или сработал фильтр).")
-        return
+    action = decision.get('action')
+    query = decision.get('search_query')
+    top_text = decision.get('top_text')
+    bottom_text = decision.get('bottom_text')
 
-    logging.info(f"✅ Идея сгенерирована: {meme_idea.get('top_text')} / {meme_idea.get('bottom_text')}")
+    logging.info(f"🧠 Decision: {action} | Query: {query}")
 
-    query = meme_idea['search_query']
+    try:
+        if action == "generate_meme":
+            await _handle_meme_action(chat_id, query, top_text, bottom_text, reply_to_message_id, bot_instance, trigger_emoji)
 
-    # 3. Search: Поиск шаблона
-    # ⚡ Optimization: Run blocking network request in a thread
-    template_url = await asyncio.to_thread(image_searcher.search_template, query + " meme template")
+        elif action == "search_gif":
+            await _handle_gif_action(chat_id, query, reply_to_message_id, bot_instance)
+
+        elif action == "search_image":
+            await _handle_image_action(chat_id, query, top_text, bottom_text, reply_to_message_id, bot_instance, trigger_emoji)
+
+        elif action == "search_video":
+            await _handle_video_action(chat_id, query, reply_to_message_id, bot_instance)
+
+        else:
+            logging.warning(f"Unknown action: {action}")
+
+    except Exception as e:
+        logging.error(f"Ошибка при выполнении действия {action}: {e}")
+        await bot_instance.send_message(chat_id, "Что-то пошло не так при генерации...", reply_to_message_id=reply_to_message_id)
+
+
+async def _handle_meme_action(chat_id, query, top_text, bottom_text, reply_to_message_id, bot_instance, trigger_emoji):
+    """Логика создания мема (Шаблон + Текст)."""
+    template_url = await asyncio.to_thread(content_searcher.search_image, query + " meme template")
 
     if not template_url:
-        await bot_instance.send_message(
-            chat_id,
-            f"🎨 <b>Шаблон не найден!</b>\n\n"
-            f"Я не смог найти подходящую картинку по запросу: <i>{html.escape(query)}</i>.",
-            parse_mode='HTML',
-            reply_to_message_id=reply_to_message_id
-        )
+        await bot_instance.send_message(chat_id, f"🤷‍♂️ Не нашел шаблон: {html.escape(query)}", reply_to_message_id=reply_to_message_id)
         return
 
-    # 4. Image Generation: Создание мема
-    # Используем уникальное имя файла для каждого запроса, чтобы избежать гонок (в простой реализации)
-    # Но для сохранения логики с TEMP_OUTPUT_FILE будем пока использовать его, зная о рисках.
-    # Лучше сделать уникальным.
-    unique_output_file = f"temp_meme_{chat_id}_{reply_to_message_id}.jpg"
+    unique_output_file = f"meme_{chat_id}_{reply_to_message_id}.jpg"
     
-    # ⚡ Optimization: Run heavy image processing and download in a thread
     final_image_path = await asyncio.to_thread(
         meme_generator.create_meme,
         image_url=template_url,
-        top_text=meme_idea['top_text'],
-        bottom_text=meme_idea['bottom_text'],
+        top_text=top_text or "",
+        bottom_text=bottom_text or "",
         output_path=unique_output_file
     )
 
-    if not final_image_path:
-        await bot_instance.send_message(chat_id, "Не удалось создать картинку из шаблона.", reply_to_message_id=reply_to_message_id)
+    if final_image_path:
+        await _send_photo_with_cleanup(chat_id, final_image_path, top_text, bottom_text, trigger_emoji, reply_to_message_id, bot_instance)
+    else:
+        await bot_instance.send_message(chat_id, "Ошибка генерации картинки.", reply_to_message_id=reply_to_message_id)
+
+
+async def _handle_image_action(chat_id, query, top_text, bottom_text, reply_to_message_id, bot_instance, trigger_emoji):
+    """Логика отправки картинки. Если есть текст - накладываем его."""
+    image_url = await asyncio.to_thread(content_searcher.search_image, query)
+
+    if not image_url:
+        await bot_instance.send_message(chat_id, f"🤷‍♂️ Не нашел картинку: {html.escape(query)}", reply_to_message_id=reply_to_message_id)
         return
 
-    # 5. Отправка результата
-    try:
-        generator_tag = f"generated by {trigger_emoji}" if trigger_emoji else "generated by meme bot"
-        caption_text = (
-            f"🤡 <b>{html.escape(meme_idea['top_text'])}</b>\n"
-            f"{html.escape(meme_idea['bottom_text'])}\n\n"
-            f"<i>({generator_tag})</i>"
+    # Если есть текст, превращаем в мем/демотиватор
+    if top_text or bottom_text:
+        unique_output_file = f"img_gen_{chat_id}_{reply_to_message_id}.jpg"
+        final_image_path = await asyncio.to_thread(
+            meme_generator.create_meme,
+            image_url=image_url,
+            top_text=top_text or "",
+            bottom_text=bottom_text or "",
+            output_path=unique_output_file
         )
+        if final_image_path:
+            await _send_photo_with_cleanup(chat_id, final_image_path, top_text, bottom_text, trigger_emoji, reply_to_message_id, bot_instance)
+        else:
+            # Fallback to sending raw image if generation fails
+            await bot_instance.send_photo(chat_id, URLInputFile(image_url), caption=f"🔍 {html.escape(query)}", reply_to_message_id=reply_to_message_id)
+    else:
+        # Просто отправляем картинку
+        await bot_instance.send_photo(chat_id, URLInputFile(image_url), caption=f"🔍 {html.escape(query)}", reply_to_message_id=reply_to_message_id)
 
-        await bot_instance.send_photo(
+
+async def _handle_gif_action(chat_id, query, reply_to_message_id, bot_instance):
+    """Логика отправки GIF. Fallback на Image."""
+    gif_url = await asyncio.to_thread(content_searcher.search_gif, query)
+
+    if gif_url:
+        await bot_instance.send_animation(chat_id, URLInputFile(gif_url), caption=f"🎞 {html.escape(query)}", reply_to_message_id=reply_to_message_id)
+    else:
+        # Fallback: Try image
+        logging.info(f"GIF not found for '{query}', trying image...")
+        await _handle_image_action(chat_id, query, None, None, reply_to_message_id, bot_instance, None)
+
+
+async def _handle_video_action(chat_id, query, reply_to_message_id, bot_instance):
+    """Логика отправки видео (ссылка)."""
+    video_link = content_searcher.search_video(query) # Not async
+
+    text = f"🎥 <b>Видео по теме:</b>\n{video_link}"
+    await bot_instance.send_message(chat_id, text, parse_mode='HTML', reply_to_message_id=reply_to_message_id)
+
+
+async def _send_photo_with_cleanup(chat_id, file_path, top, bottom, emoji, reply_id, bot):
+    """Helper to send photo and cleanup file."""
+    try:
+        generator_tag = f"generated by {emoji}" if emoji else "AI Content Router"
+        caption = f"{html.escape(top or '')} {html.escape(bottom or '')}".strip()
+        if not caption:
+             caption = "Generated Image"
+
+        full_caption = f"{caption}\n\n<i>({generator_tag})</i>"[:1024]
+
+        await bot.send_photo(
             chat_id=chat_id,
-            photo=FSInputFile(final_image_path),
-            caption=caption_text,
+            photo=FSInputFile(file_path),
+            caption=full_caption,
             parse_mode='HTML',
-            reply_to_message_id=reply_to_message_id
+            reply_to_message_id=reply_id
         )
-    except Exception as e:
-        logging.error(f"Ошибка при отправке фото: {e}")
-        try:
-            await bot_instance.send_message(chat_id, "Ошибка отправки мема.", reply_to_message_id=reply_to_message_id)
-        except Exception as nested_e:
-            logging.error(f"Не удалось отправить сообщение об ошибке: {nested_e}")
     finally:
-        # Clean up temporary file
-        if os.path.exists(final_image_path):
+        if os.path.exists(file_path):
             try:
-                os.remove(final_image_path)
+                os.remove(file_path)
             except Exception as e:
-                logging.error(f"Не удалось удалить временный файл {final_image_path}: {e}")
+                logging.error(f"Failed to remove temp file {file_path}: {e}")
 
 
 # Хендлер для реакции - основной триггер
@@ -167,7 +214,6 @@ async def reaction_handler(reaction: MessageReactionUpdated):
     reaction_meaning = MEME_TRIGGERS.get(trigger_emoji)
     
     if not reaction_meaning:
-        logging.warning(f"Unknown trigger emoji: {trigger_emoji}")
         return
 
     # Получаем контекст из HistoryManager
@@ -186,16 +232,16 @@ async def reaction_handler(reaction: MessageReactionUpdated):
                 "Я могу делать мемы только из сообщений, которые пришли, пока я был онлайн.",
                 parse_mode='HTML'
             )
-        except Exception as e:
-            logging.error(f"Не удалось отправить сообщение об ошибке истории: {e}")
+        except Exception:
+            pass
         return
 
-    await generate_and_send_meme(
+    await handle_content_generation(
         chat_id=chat_id,
         triggered_text=triggered_text,
         context_messages=context_messages,
         reaction_context=reaction_meaning,
-        reply_to_message_id=reaction.message_id, # Отвечаем на сообщение, на которое была реакция - хотя технически это может быть не всегда возможно, если сообщение старое. Но try/except в generate_and_send_meme обработает.
+        reply_to_message_id=reaction.message_id,
         bot_instance=reaction.bot,
         trigger_emoji=trigger_emoji
     )
@@ -206,21 +252,17 @@ async def reaction_handler(reaction: MessageReactionUpdated):
 async def message_handler(message: Message):
     """
     Слушает все текстовые сообщения.
-    1. Сохраняет их в историю.
-    2. В личных сообщениях (private) автоматически генерирует мем.
     """
     if message.text and message.text.strip():
         history_manager.add_message(message)
     else:
-        # Skip empty messages
         return
 
     # Логика для Личных Сообщений (DM)
     if message.chat.type == 'private' and not message.text.startswith('/'):
-        # Отбивка: временное сообщение
-        status_msg = await message.answer("🎨 Придумываю мем...")
+        # Отбивка
+        status_msg = await message.answer("🤖 Думаю над ответом...")
 
-        # Получаем контекст (последние сообщения, включая текущее)
         context_messages = history_manager.get_context(message.chat.id, message.message_id)
         
         if not context_messages:
@@ -230,11 +272,9 @@ async def message_handler(message: Message):
                 pass
             return
 
-        # Запускаем генерацию
-        # В качестве reaction_context передаем нейтральный или специфичный для ЛС контекст
-        dm_context = "Пользователь написал это сообщение в личном чате. Сделай мем, который иронично обыгрывает этот текст."
+        dm_context = "Личный чат. Будь остроумным и полезным собеседником."
 
-        await generate_and_send_meme(
+        await handle_content_generation(
             chat_id=message.chat.id,
             triggered_text=message.text,
             context_messages=context_messages,
@@ -243,7 +283,6 @@ async def message_handler(message: Message):
             bot_instance=message.bot
         )
 
-        # Удаляем отбивку
         try:
             await status_msg.delete()
         except Exception:
@@ -253,17 +292,18 @@ async def message_handler(message: Message):
 @router.message(Command("help"))
 async def command_help_handler(message: Message):
     """Справка по использованию бота."""
-    # Выводим первые 5 и последние для краткости или просто список
     triggers_list = list(MEME_TRIGGERS.keys())
     triggers_str = ", ".join(triggers_list[:10]) + "..."
 
     help_text = (
-        "🎨 <b>Как пользоваться ботом</b>\n\n"
-        "Я превращаю ваши сообщения в мемы! Вот как это работает:\n\n"
-        f"1. <b>Реакция</b>: Поставьте реакцию ({triggers_str}) на любое сообщение.\n"
-        "2. <b>Личка</b>: Просто напиши мне сообщение, и я сделаю из него мем.\n"
-        "3. <b>Контекст</b>: Я читаю диалог, чтобы мем был в тему.\n\n"
-        "<i>Совет: Добавьте меня в группу, там веселее!</i>"
+        "🎨 <b>AI Content Router</b>\n\n"
+        "Я теперь не просто мемодел, я агрегатор контента!\n"
+        "Ставь реакции, и я решу, что отправить:\n"
+        "- Мем (для шуток)\n"
+        "- GIF (для эмоций)\n"
+        "- Картинку (для визуализации)\n"
+        "- Видео (для отсылок)\n\n"
+        f"Реагируй: {triggers_str}"
     )
     await message.answer(help_text, parse_mode='HTML')
 
@@ -273,10 +313,9 @@ async def command_help_handler(message: Message):
 async def command_start_handler(message: Message):
     """Ответ на команду /start."""
     welcome_text = (
-        f"👋 <b>Привет! Я бот-мемогенератор.</b>\n\n"
-        f"Добавь меня в чат и ставь реакции на сообщения.\n"
-        "Или просто пиши мне сюда — я сделаю мем из твоего текста!\n\n"
-        "Нажми /help для подробностей!"
+        f"👋 <b>Привет! Я обновленный MemeBrain -> AI Content Router.</b>\n\n"
+        f"Кидай мне текст или ставь реакции в группах.\n"
+        "Я подберу идеальный мем, гифку или видео под контекст!"
     )
     await message.answer(welcome_text, parse_mode='HTML')
 
@@ -288,52 +327,26 @@ async def command_memory_stats_handler(message: Message):
     stats = history_manager.get_memory_statistics()
     
     if not stats.get('enabled'):
-        await message.answer(
-            "📝 <b>Агентская память отключена</b>\n\n"
-            "Память не сохраняется между перезапусками.",
-            parse_mode='HTML'
-        )
+        await message.answer("Память отключена.", parse_mode='HTML')
         return
     
     stats_text = (
-        f"📊 <b>Статистика агентской памяти</b>\n\n"
-        f"💬 <b>Чатов в памяти:</b> {stats.get('total_chats', 0)}\n"
-        f"📝 <b>Всего сообщений:</b> {stats.get('total_messages', 0)}\n"
-        f"🗂 <b>ID чатов:</b> {', '.join(map(str, stats.get('chat_ids', [])[:5]))}"
+        f"📊 <b>Статистика</b>\n"
+        f"Чатов: {stats.get('total_chats', 0)}\n"
+        f"Сообщений: {stats.get('total_messages', 0)}"
     )
-    
-    if len(stats.get('chat_ids', [])) > 5:
-        stats_text += f"... (+{len(stats['chat_ids']) - 5} еще)"
-    
     await message.answer(stats_text, parse_mode='HTML')
 
 
 # Команда для очистки истории текущего чата
 @router.message(Command("clear_memory"))
 async def command_clear_memory_handler(message: Message):
-    """Очищает историю текущего чата из памяти."""
+    """Очищает историю текущего чата."""
     chat_id = message.chat.id
+    history_manager.history.get(chat_id, []).clear()
     
-    # Проверяем, есть ли что очищать
-    if chat_id not in history_manager.history or len(history_manager.history[chat_id]) == 0:
-        await message.answer(
-            "🤷‍♂️ <b>История пуста</b>\n\n"
-            "В этом чате нет сохраненных сообщений.",
-            parse_mode='HTML'
-        )
-        return
-    
-    # Очищаем in-memory историю
-    message_count = len(history_manager.history[chat_id])
-    history_manager.history[chat_id].clear()
-    
-    # Очищаем markdown файлы если память включена
     if history_manager.memory_enabled:
         from .services.agent_memory import agent_memory
         agent_memory.clear_chat(chat_id)
     
-    await message.answer(
-        f"🗑 <b>История очищена!</b>\n\n"
-        f"Удалено {message_count} сообщений из памяти этого чата.",
-        parse_mode='HTML'
-    )
+    await message.answer("🗑 История очищена!", parse_mode='HTML')
