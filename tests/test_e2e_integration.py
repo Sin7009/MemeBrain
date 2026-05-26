@@ -2,12 +2,13 @@
 End-to-End интеграционный тест для MemeBrain.
 Симулирует реальный сценарий работы бота от начала до конца.
 """
+# ruff: noqa: E402
 import pytest
 
 # Настройка pytest-asyncio
 pytest_plugins = ('pytest_asyncio',)
 import asyncio
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 from src.bot.handlers import (
     command_start_handler,
     command_help_handler,

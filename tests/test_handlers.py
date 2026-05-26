@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, AsyncMock
-from src.bot.handlers import command_start_handler, reaction_handler
-from aiogram.types import Message, Chat, User, MessageReactionUpdated
+from src.bot.handlers import command_start_handler, reaction_handler, command_joke_handler, joke_feedback_handler
+from aiogram.types import Message, Chat, User
 
 # Helper to create mock messages
 def create_message(text="Hello", chat_id=123, user_id=456):
@@ -40,7 +40,7 @@ async def test_reaction_handler_success():
          patch('src.bot.handlers.meme_brain') as mock_brain, \
          patch('src.bot.handlers.image_searcher') as mock_search, \
          patch('src.bot.handlers.meme_generator') as mock_gen, \
-         patch('src.bot.handlers.FSInputFile') as mock_fs:
+         patch('src.bot.handlers.FSInputFile'):
 
         # Setup successful chain
         mock_hist.get_context.return_value = ["User: Context"]
@@ -69,3 +69,39 @@ async def test_reaction_handler_no_history():
 
         # Should just return without sending anything
         reaction.bot.send_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_command_joke_success_with_feedback_buttons():
+    msg = create_message(text="/joke")
+    sent = AsyncMock()
+    sent.message_id = 777
+    msg.answer = AsyncMock(return_value=sent)
+
+    with patch('src.bot.handlers.joke_service') as mock_joke_service:
+        from src.services.jokes import JokeItem
+        mock_joke_service.get_joke.return_value = JokeItem(title="Анекдот", text="Текст")
+
+        await command_joke_handler(msg)
+
+        msg.answer.assert_called_once()
+        kwargs = msg.answer.call_args.kwargs
+        assert kwargs.get('reply_markup') is not None
+        mock_joke_service.bind_sent_message.assert_called_once_with(777, mock_joke_service.get_joke.return_value)
+
+
+@pytest.mark.asyncio
+async def test_joke_feedback_downvote_updates_model():
+    callback = AsyncMock()
+    callback.data = "joke_feedback:down"
+    callback.message = AsyncMock()
+    callback.message.message_id = 1234
+    callback.answer = AsyncMock()
+
+    with patch('src.bot.handlers.joke_service') as mock_joke_service:
+        mock_joke_service.vote.return_value = True
+
+        await joke_feedback_handler(callback)
+
+        mock_joke_service.vote.assert_called_once_with(1234, False)
+        callback.answer.assert_called_once()

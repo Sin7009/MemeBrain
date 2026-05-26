@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 import unittest
 import tempfile
 import shutil

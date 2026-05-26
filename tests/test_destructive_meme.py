@@ -1,6 +1,5 @@
-import pytest
 from unittest.mock import patch, MagicMock
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 from src.services.image_gen import MemeGenerator
 
 class TestDestructiveMemeGenerator:

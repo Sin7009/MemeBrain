@@ -59,6 +59,29 @@ class TestMemeBrainExtended:
         prompt = call_args[1]['messages'][1]['content']
         assert "Злость, ярость" in prompt
     
+    def test_generate_meme_idea_contains_absurd_phrase_style_guide(self, brain):
+        """Prompt should include style hints for absurd two-word rhyme memes."""
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(message=MagicMock(
+                content='{"is_memable": true, "top_text": "T", "bottom_text": "B", "search_query": "q"}'
+            ))
+        ]
+
+        brain.client = MagicMock()
+        brain.client.chat.completions.create.return_value = mock_response
+
+        result = brain.generate_meme_idea(
+            context_messages=["User: абсурд"],
+            triggered_text="абсурд"
+        )
+
+        assert result is not None
+        call_args = brain.client.chat.completions.create.call_args
+        prompt = call_args[1]['messages'][1]['content']
+        assert "Ушат Помоев" in prompt
+        assert "Караул Шкафов" in prompt
+    
     def test_generate_meme_idea_empty_context(self, brain):
         """Test meme generation with empty context"""
         mock_response = MagicMock()

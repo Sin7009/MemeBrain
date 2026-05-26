@@ -1,5 +1,5 @@
 import json
-import re
+import logging
 from typing import Optional, Dict
 
 def safe_json_parse(text: str) -> Optional[Dict]:
@@ -12,14 +12,10 @@ def safe_json_parse(text: str) -> Optional[Dict]:
         text = text.strip().replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except json.JSONDecodeError as e:
-        print(f"Ошибка парсинга JSON: {e}")
-        print(f"Неудавшийся текст: {text[:200]}...")
+        logging.error("Ошибка парсинга JSON: %s", e)
+        logging.error("Неудавшийся текст: %s...", text[:200])
         return None
 
 def escape_html(text: str) -> str:
-    """Escapes HTML special characters."""
+    """Экранирует специальные символы HTML."""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-def clean_filename(filename: str) -> str:
-    """Removes invalid characters from filename."""
-    return re.sub(r'[\\/*?:"<>|]', '', filename)

@@ -2,6 +2,7 @@
 Комплексный стресс-тест бота MemeBrain.
 Проверяет все функции бота в различных сценариях использования.
 """
+# ruff: noqa: E402
 import pytest
 
 # Настройка pytest-asyncio
@@ -16,10 +17,8 @@ from src.bot.handlers import (
     generate_and_send_meme,
     MEME_TRIGGERS
 )
-from aiogram.types import Message, Chat, User, MessageReactionUpdated
+from aiogram.types import Message, Chat, User
 from src.services.history import HistoryManager
-from src.services.llm import MemeBrain
-from src.services.search import ImageSearcher
 from src.services.image_gen import MemeGenerator
 
 
@@ -544,7 +543,7 @@ class TestRealServicesIntegration:
             )
             
             assert result is not None
-            assert result["is_memable"] == True
+            assert result["is_memable"]
             assert "top_text" in result
             assert "bottom_text" in result
             assert "search_query" in result
@@ -566,7 +565,6 @@ class TestRealServicesIntegration:
     
     def test_image_generator_text_wrapping(self):
         """Тест обертки текста в MemeGenerator"""
-        from src.services.image_gen import MemeGenerator
         
         gen = MemeGenerator()
         

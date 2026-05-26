@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     """
     Конфигурация проекта, загружаемая из .env файла.
@@ -16,6 +17,7 @@ class Settings(BaseSettings):
     
     # Tavily Search
     TAVILY_API_KEY: str
+    TAVILY_API_URL: str = "https://api.tavily.com/search"
     SEARCH_MOCK_ENABLED: bool = False
     
     # Face Swap
@@ -23,9 +25,21 @@ class Settings(BaseSettings):
     
     # History
     HISTORY_SIZE: int = 10 # Сколько сообщений хранить
-    
+
+    # Concurrency
+    MAX_CONCURRENT_GENERATIONS: int = 2  # Глобальный лимит параллельных генераций мемов
+
+    # Auto-jokes in groups
+    JOKE_AUTO_CHANCE: float = 0.03  # Вероятность авто-анекдота на входящее сообщение
+    JOKE_AUTO_COOLDOWN_SECONDS: int = 3600  # Минимальная пауза между авто-анекдотами в чате
+
     # Agent Memory
     MEMORY_DIR: str = "memory"  # Директория для хранения markdown файлов с историей
     MEMORY_ENABLED: bool = True  # Включить сохранение истории в markdown
 
-config = Settings()
+def get_settings() -> Settings:
+    """Фабрика конфигурации для ленивой инициализации и удобного тестирования."""
+    return Settings()  # pyright: ignore[reportCallIssue]
+
+
+config = get_settings()

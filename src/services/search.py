@@ -1,4 +1,5 @@
 import requests
+import logging
 from typing import Optional
 from functools import lru_cache
 from .config import config
@@ -7,7 +8,6 @@ class ImageSearcher:
     """
     Сервис поиска картинок через Tavily API.
     """
-    API_URL = "https://api.tavily.com/search"
 
     def __init__(self):
         self.api_key = config.TAVILY_API_KEY
@@ -17,7 +17,7 @@ class ImageSearcher:
         """
         Ищет подходящий шаблон мема и возвращает URL первого результата.
         """
-        return self._search_template_cached(query, self.api_key, self.mock_enabled, self.API_URL)
+        return self._search_template_cached(query, self.api_key, self.mock_enabled, config.TAVILY_API_URL)
 
     @staticmethod
     @lru_cache(maxsize=128)
@@ -26,7 +26,7 @@ class ImageSearcher:
         Кешированная реализация поиска.
         """
         if mock_enabled:
-            print(f"Search: Используется мок-режим для запроса '{query}'.")
+            logging.info("Search: Используется мок-режим для запроса '%s'.", query)
             # Ссылка на простой шаблон для тестирования
             return "https://placehold.co/600x400.png" 
 
@@ -45,19 +45,16 @@ class ImageSearcher:
             response.raise_for_status()
             data = response.json()
 
-            # Tavily returns a list of image URLs in the 'images' field
+            # Tavily возвращает список URL картинок в поле 'images'
             if 'images' in data and data['images']:
-                # Возвращаем прямую ссылку на изображение
-                # data['images'] is a list of strings (URLs)
                 return data['images'][0]
             
-            print(f"Search: Результаты для '{query}' не найдены.")
+            logging.warning("Search: Результаты для '%s' не найдены.", query)
             return None
 
         except requests.exceptions.RequestException as e:
-            # 🛡️ Sentinel: Sanitize error logs to prevent API key leakage
+            # 🛡️ Sentinel: Очистка логов ошибок для предотвращения утечки API ключей
             status_code = getattr(e.response, 'status_code', 'N/A')
             error_type = type(e).__name__
-            # Tavily keys are in the body, but good to be safe about URL params anyway
-            print(f"Search: Ошибка при запросе к Tavily API ({error_type}, Status: {status_code})")
+            logging.error("Search: Ошибка при запросе к Tavily API (%s, Status: %s)", error_type, status_code)
             return None

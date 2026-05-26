@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from src.services.search import ImageSearcher
 from src.services.config import config
 import requests
+from requests.exceptions import HTTPError
 
 @pytest.fixture
 def searcher():
@@ -35,6 +36,7 @@ def test_search_template_success(searcher):
 def test_search_template_no_results(searcher):
     mock_response = MagicMock()
     mock_response.json.return_value = {"images": []}
+    mock_response.raise_for_status.return_value = None
 
     with patch('requests.post', return_value=mock_response):
         url = searcher.search_template("ghost")
@@ -68,3 +70,19 @@ def test_search_template_caching(searcher):
 
         # Verify network request happened only once
         mock_post.assert_called_once()
+
+
+def test_search_template_http_error_with_status(searcher):
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    http_error = HTTPError("Unauthorized", response=mock_response)
+
+    with patch('requests.post', side_effect=http_error):
+        url = searcher.search_template("private query")
+        assert url is None
+
+
+def test_search_template_request_exception_without_response(searcher):
+    with patch('requests.post', side_effect=requests.exceptions.RequestException("Network down")):
+        url = searcher.search_template("offline query")
+        assert url is None

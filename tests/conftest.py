@@ -1,7 +1,6 @@
 import os
 import pytest
 from unittest.mock import patch, MagicMock
-from PIL import Image
 
 # Set dummy env vars for pydantic validation BEFORE importing src modules
 os.environ["TELEGRAM_BOT_TOKEN"] = "dummy_token"

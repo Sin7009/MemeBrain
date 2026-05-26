@@ -76,8 +76,20 @@ class HistoryManager:
         # Получаем все сообщения из deque
         messages_tuple = list(self.history[chat_id])
 
+        # Контекст должен включать сообщения ДО (и включая) триггерное сообщение.
+        # Если message_id не найден (старое/вытесненное сообщение), откатываемся
+        # к полному доступному контексту для обратной совместимости.
+        trigger_index = None
+        for idx, (mid, _uid, _text) in enumerate(messages_tuple):
+            if mid == message_id:
+                trigger_index = idx
+                break
+
+        if trigger_index is not None:
+            messages_tuple = messages_tuple[: trigger_index + 1]
+
         # Форматируем для LLM
-        for mid, user_id, text in messages_tuple:
+        for _mid, user_id, text in messages_tuple:
             # Упрощенная маскировка ID:
             user_display = f"User {user_id}"
             formatted_history.append(f"{user_display}: {text}")

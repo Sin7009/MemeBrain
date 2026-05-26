@@ -1,5 +1,3 @@
-import pytest
-from unittest.mock import MagicMock
 from src.services.history import HistoryManager
 from aiogram.types import Message, Chat, User
 from datetime import datetime
@@ -130,6 +128,20 @@ class TestHistoryManagerExtended:
         
         assert len(context) == 1
         assert context[0] == "User 789: Test message"
+
+    def test_context_fallback_when_trigger_not_found(self):
+        """Если триггерное сообщение вытеснено из deque, возвращаем доступный контекст целиком."""
+        manager = HistoryManager(max_size=3)
+        manager.add_message(self.create_mock_message(123, 10, 1, "A"))
+        manager.add_message(self.create_mock_message(123, 11, 1, "B"))
+        manager.add_message(self.create_mock_message(123, 12, 1, "C"))
+
+        # message_id=999 не существует в истории
+        context = manager.get_context(123, 999)
+        assert len(context) == 3
+        assert "A" in context[0]
+        assert "B" in context[1]
+        assert "C" in context[2]
     
     def test_different_users_in_same_chat(self):
         """Test multiple users in same chat are tracked correctly"""

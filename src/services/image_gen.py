@@ -2,6 +2,7 @@ from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 import requests
 import io
 import textwrap
+import logging
 from typing import List, Optional
 from functools import lru_cache
 
@@ -12,61 +13,56 @@ class MemeGenerator:
     def __init__(self, font_path: str = "arial.ttf"):
         # Если 'arial.ttf' недоступен, Pillow использует стандартный шрифт
         self.font_path = font_path
-        # ⚡ Optimization: Removed self.base_font as it was unused and re-initialized every time in create_meme
 
     @staticmethod
     @lru_cache(maxsize=128)
     def _download_image_bytes(url: str) -> Optional[bytes]:
         """Скачивает изображение по URL и возвращает байты. Кешируется."""
-        MAX_SIZE = 5 * 1024 * 1024  # 5 MB limit
+        MAX_SIZE = 5 * 1024 * 1024  # Лимит 5 МБ
         try:
             with requests.get(url, stream=True, timeout=10) as response:
                 response.raise_for_status()
 
-                # Check Content-Length if present
+                # Проверяем Content-Length, если есть
                 content_length = response.headers.get('Content-Length')
                 if content_length and int(content_length) > MAX_SIZE:
-                    print(f"Изображение слишком большое: {content_length} байт")
+                    logging.warning("Изображение слишком большое: %s байт", content_length)
                     return None
 
-                # ⚡ Optimized: Use io.BytesIO for O(N) accumulation instead of O(N^2) string/bytes concatenation
+                # Использование io.BytesIO для эффективного накопления байтов
                 buffer = io.BytesIO()
                 downloaded_size = 0
                 for chunk in response.iter_content(chunk_size=8192):
                     buffer.write(chunk)
                     downloaded_size += len(chunk)
                     if downloaded_size > MAX_SIZE:
-                        print("Превышен лимит размера изображения")
+                        logging.warning("Превышен лимит размера изображения")
                         return None
                 return buffer.getvalue()
         except requests.exceptions.RequestException as e:
-            print(f"Ошибка при скачивании изображения: {e}")
+            logging.error("Ошибка при скачивании изображения: %s", e)
             return None
         except ValueError:
-             print("Ошибка парсинга Content-Length")
-             return None
+            logging.error("Ошибка парсинга Content-Length")
+            return None
 
     @staticmethod
     @lru_cache(maxsize=16)
     def _get_cached_image_object(url: str) -> Optional[Image.Image]:
         """
-        Retrieves a decoded PIL Image object from cache.
-        Using a smaller cache size (16) because decoded images consume significant memory.
+        Извлекает декодированный объект PIL Image из кэша.
         """
         image_bytes = MemeGenerator._download_image_bytes(url)
         if not image_bytes:
             return None
         try:
-            # ⚡ Optimized: Return the object directly to the cache.
-            # Callers MUST use .copy() if they intend to modify it.
             return Image.open(io.BytesIO(image_bytes)).convert("RGB")
         except (UnidentifiedImageError, Exception) as e:
-            print(f"Ошибка при открытии изображения: {e}")
+            logging.error("Ошибка при открытии изображения: %s", e)
             return None
 
     def _download_image(self, url: str) -> Optional[Image.Image]:
-        """Скачивает изображение по URL и возвращает объект PIL Image."""
-        # ⚡ Optimized: Use cached decoded image and return a copy to avoid repeated decoding overhead.
+        """Скачивает изображение по URL и возвращает копию объекта PIL Image."""
         img = self._get_cached_image_object(url)
         if img:
             return img.copy()
@@ -75,7 +71,6 @@ class MemeGenerator:
     def _draw_text_with_shadow(self, draw: ImageDraw.Draw, text: str, pos: tuple[int, int], font: ImageFont.ImageFont):
         """Рисует текст с черным контуром/тенью (классический мем-стиль)."""
         x, y = pos
-        # Using built-in stroke which is faster (C-implementation) than drawing 5 times in Python
         draw.text(
             (x, y),
             text,
@@ -89,8 +84,6 @@ class MemeGenerator:
         """Оборачивает текст, чтобы он умещался по ширине изображения."""
         lines = []
         
-        # Calculate roughly characters that fit.
-        # We need a way to measure text width.
         def get_text_width(t, f):
             if hasattr(f, 'getlength'):
                 return f.getlength(t)
@@ -99,20 +92,14 @@ class MemeGenerator:
         avg_char_width = get_text_width("A", font)
         max_chars_per_line = int(max_width // avg_char_width) if avg_char_width > 0 else 1
         
-        # Ensure max_chars_per_line is at least 1 to avoid textwrap.wrap(width=0) error
-        # This can happen if the image is very small (e.g. < character width)
         if max_chars_per_line < 1:
             max_chars_per_line = 1
 
-        # Используем textwrap для базового переноса
-        # We ensure width is at least 1, even if max_chars_per_line * 1.5 casts to 0 (unlikely if max_chars_per_line >= 1)
         wrap_width = max(1, int(max_chars_per_line * 1.5))
         wrapped_lines = textwrap.wrap(text, width=wrap_width, break_long_words=False)
         
-        # Дополнительная проверка на ширину
         for line in wrapped_lines:
-             if get_text_width(line, font) > max_width * 0.95:
-                # Если строка все равно слишком длинная, ищем точку разрыва
+            if get_text_width(line, font) > max_width * 0.95:
                 temp_line = ""
                 words = line.split()
                 for word in words:
@@ -124,15 +111,15 @@ class MemeGenerator:
                         temp_line = word
                 if temp_line:
                     lines.append(temp_line)
-             else:
-                 lines.append(line)
+            else:
+                lines.append(line)
                  
         return lines
 
     @staticmethod
     @lru_cache(maxsize=128)
     def _get_font(font_path: Optional[str], size: int) -> ImageFont.ImageFont:
-        """Loads and caches the font object to avoid disk I/O and parsing overhead."""
+        """Загружает и кэширует объект шрифта."""
         if font_path:
             try:
                 return ImageFont.truetype(font_path, size)
@@ -146,22 +133,17 @@ class MemeGenerator:
         if not img:
             return None
         
-        # Увеличиваем размер шрифта пропорционально ширине изображения
         width, height = img.size
 
-        # 🛡️ Sentinel: Prevent division by zero on tiny images
+        # Защита от деления на ноль на слишком маленьких картинках
         if width < 10 or height < 10:
-            print(f"Image too small: {width}x{height}")
+            logging.warning("Изображение слишком маленькое: %sx%s", width, height)
             return None
 
         font_size = max(int(width / 20), 20)
-        
-        # ⚡ Optimized: Use cached font loader
         font = self._get_font(self.font_path, font_size)
-        
         draw = ImageDraw.Draw(img)
 
-        # Helper to get size
         def get_text_size(t, f):
             if hasattr(f, 'getbbox'):
                 bbox = f.getbbox(t)
@@ -177,11 +159,10 @@ class MemeGenerator:
             text_width, text_height = get_text_size(line, font)
             x = (width - text_width) / 2
             self._draw_text_with_shadow(draw, line, (int(x), int(top_y)), font)
-            top_y += text_height * 1.1 # Смещение для следующей строки
+            top_y += text_height * 1.1
 
         # 2. Нижний текст
         bottom_lines = self._wrap_text(bottom_text.upper(), width, font)
-        # Вычисляем начальную позицию для нижнего текста
         total_bottom_height = sum(get_text_size(line, font)[1] * 1.1 for line in bottom_lines)
         bottom_y = height - total_bottom_height
 
@@ -191,6 +172,5 @@ class MemeGenerator:
             self._draw_text_with_shadow(draw, line, (int(x), int(bottom_y)), font)
             bottom_y += text_height * 1.1
 
-        # Сохраняем результат
         img.save(output_path)
         return output_path

@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import patch, AsyncMock
 from src.bot.handlers import generate_and_send_meme
-from aiogram.types import Message, Chat
 
 
 @pytest.mark.asyncio

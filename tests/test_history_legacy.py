@@ -1,6 +1,5 @@
 import unittest
-from collections import deque
-from src.services.history import HistoryManager, config
+from src.services.history import HistoryManager
 from aiogram.types import Message, Chat, User
 
 class TestHistoryManager(unittest.TestCase):

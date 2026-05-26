@@ -1,4 +1,3 @@
-import os
 import json
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -159,7 +158,7 @@ class AgentMemory:
                     message_id = int(lines[0].strip())
                     
                     # Извлекаем user_id
-                    user_line = [l for l in lines if l.startswith('**Пользователь:**')][0]
+                    user_line = [line for line in lines if line.startswith('**Пользователь:**')][0]
                     user_id = int(user_line.split('User ')[1].strip())
                     
                     # Извлекаем текст сообщения (между тройными обратными кавычками)

@@ -1,6 +1,5 @@
 import unittest
 import os
-from unittest.mock import patch, MagicMock
 # Set env vars before importing
 os.environ["TELEGRAM_BOT_TOKEN"] = "dummy_token"
 os.environ["TAVILY_API_KEY"] = "dummy_key"
@@ -41,6 +40,19 @@ class TestHistoryManager(unittest.TestCase):
         context = self.manager.get_context(self.chat_id, 101)
         self.assertEqual(len(context), 1)
         self.assertIn("User 111: Hello World", context[0])
+
+    def test_get_context_respects_trigger_message_boundary(self):
+        # Добавляем сообщения в хронологическом порядке
+        self.manager.add_message(self.create_mock_message(101, "First"))
+        self.manager.add_message(self.create_mock_message(102, "Second"))
+        self.manager.add_message(self.create_mock_message(103, "Third"))
+
+        # Контекст по message_id=102 не должен включать "Third"
+        context = self.manager.get_context(self.chat_id, 102)
+        self.assertEqual(len(context), 2)
+        self.assertIn("First", context[0])
+        self.assertIn("Second", context[1])
+        self.assertFalse(any("Third" in line for line in context))
 
     def test_ignore_forwarded_messages(self):
         reg_msg = self.create_mock_message(201, "Regular message")

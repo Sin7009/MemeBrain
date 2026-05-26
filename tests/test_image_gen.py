@@ -2,7 +2,6 @@ import pytest
 from unittest.mock import patch, MagicMock
 from src.services.image_gen import MemeGenerator
 from PIL import Image
-import io
 
 @pytest.fixture
 def generator():

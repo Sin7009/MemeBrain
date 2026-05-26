@@ -1,11 +1,34 @@
+import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
+from src.bot import handlers as handlers_module
 from src.bot.handlers import (
     command_help_handler,
     message_handler,
-    generate_and_send_meme
+    generate_and_send_meme,
 )
+from src.services.llm import MemeBrain
+from src.services.config import config
 from aiogram.types import Message, Chat, User
+
+
+def _llm_stub(content: str):
+    response = MagicMock()
+    response.choices = [MagicMock(message=MagicMock(content=content))]
+    return response
+
+
+@pytest.fixture(autouse=True)
+def clear_concurrency_state():
+    if hasattr(handlers_module, "_generation_semaphore"):
+        handlers_module._generation_semaphore = None
+    if hasattr(handlers_module, "_chat_locks"):
+        handlers_module._chat_locks.clear()
+    yield
+    if hasattr(handlers_module, "_generation_semaphore"):
+        handlers_module._generation_semaphore = None
+    if hasattr(handlers_module, "_chat_locks"):
+        handlers_module._chat_locks.clear()
 
 
 def create_message(text="Hello", chat_id=123, user_id=456, chat_type='private'):
@@ -201,3 +224,63 @@ async def test_generate_and_send_meme_image_gen_failure():
         # Should send error message
         msg.bot.send_message.assert_called_once()
         assert "Не удалось создать картинку" in msg.bot.send_message.call_args[0][1]
+
+
+def test_generate_meme_idea_redacts_on_missing_choices():
+    """MemeBrain should safely return None when API response has empty choices."""
+    with patch.object(config, 'LLM_MOCK_ENABLED', False):
+        brain = MemeBrain()
+        brain.mock_enabled = False
+        brain.client = MagicMock()
+        brain.client.chat.completions.create.return_value = _llm_stub('{"is_memable": true, "top_text": "T", "bottom_text": "B", "search_query": "Q"}')
+        brain.client.chat.completions.create.return_value.choices = []
+
+        result = brain.generate_meme_idea(["ctx"], "trigger")
+        assert result is None
+
+
+def test_generate_meme_idea_missing_search_query_returns_none():
+    """MemeBrain should reject responses without search_query/template_query."""
+    with patch.object(config, 'LLM_MOCK_ENABLED', False):
+        brain = MemeBrain()
+        brain.mock_enabled = False
+        brain.client = MagicMock()
+        brain.client.chat.completions.create.return_value = _llm_stub(
+            '{"is_memable": true, "top_text": "TOP", "bottom_text": "BOTTOM"}'
+        )
+
+        result = brain.generate_meme_idea(["ctx"], "trigger")
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_generate_and_send_meme_debounces_parallel_same_chat():
+    """Parallel requests for same chat should run generation only once at a time."""
+    bot = AsyncMock()
+    active = 0
+    max_active = 0
+
+    async def fake_generate(*_args, **_kwargs):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.05)
+        active -= 1
+        return {
+            "is_memable": True,
+            "top_text": "TOP",
+            "bottom_text": "BOTTOM",
+            "search_query": "query",
+        }
+
+    with patch("src.bot.handlers._generate_meme_idea", side_effect=fake_generate), \
+         patch("src.bot.handlers._find_meme_template", return_value="http://img.jpg"), \
+         patch("src.bot.handlers._create_meme_file", return_value="/tmp/meme.jpg"), \
+         patch("src.bot.handlers._send_meme_photo", new_callable=AsyncMock), \
+         patch("src.bot.handlers.os.path.exists", return_value=False):
+        await asyncio.gather(
+            generate_and_send_meme(123, "A", ["ctx"], bot_instance=bot),
+            generate_and_send_meme(123, "B", ["ctx"], bot_instance=bot),
+        )
+
+    assert max_active == 1
